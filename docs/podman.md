@@ -34,7 +34,21 @@ systemctl --user status hostdeck
 
 Журнал: `journalctl --user -u hostdeck -f`.
 
-## 4. Обратный прокси
+## 4. Caddy в контейнере (вариант домашней лаборатории)
+
+Юнит подключает HostDeck к podman-сети `n8n-net`, где уже работает контейнер `caddy`. В Caddyfile добавляется блок:
+
+```caddy
+hostdeck.apps.monitoring.test {
+    reverse_proxy hostdeck:8080 {
+        flush_interval -1      # поток вывода консоли (SSE) не буферизуется
+    }
+}
+```
+
+После правки: `podman exec caddy caddy reload --config /etc/caddy/Caddyfile` (путь внутри контейнера может отличаться). Если Caddyfile генерируется из `services.yaml`, добавьте службу там в формате соседних записей.
+
+## 4a. Обратный прокси nginx (общий вариант)
 
 Контейнер слушает только `127.0.0.1:8080`. TLS должен давать ваш прокси, например для nginx:
 

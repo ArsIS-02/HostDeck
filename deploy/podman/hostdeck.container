@@ -9,7 +9,9 @@ After=network-online.target
 [Container]
 Image=localhost/hostdeck:latest
 ContainerName=hostdeck
-# Наружу только на localhost: TLS и доступ из сети даёт обратный прокси
+# Контейнер в одной сети с Caddy (n8n-net): Caddy ходит на hostdeck:8080, наружу порт не публикуется.
+# Для отладки с самого хоста порт открыт только на localhost.
+Network=n8n-net
 PublishPort=127.0.0.1:8080:8080
 # Именованный том: права и SELinux-метки Podman выставляет сам
 Volume=hostdeck-data.volume:/data
@@ -17,8 +19,8 @@ Volume=hostdeck-data.volume:/data
 Secret=hostdeck_admin_pw,type=mount,target=/run/secrets/admin_pw
 Environment=HOSTDECK_ADMIN_PASSWORD_FILE=/run/secrets/admin_pw
 Environment=HOSTDECK_ADMIN_USER=admin
-# IP обратного прокси (откуда приходят X-Forwarded-*)
-Environment=FORWARDED_ALLOW_IPS=127.0.0.1
+# Заголовки X-Forwarded-* принимаются от любого адреса: контейнер виден только Caddy в n8n-net и localhost хоста
+Environment=FORWARDED_ALLOW_IPS=*
 ReadOnly=true
 Tmpfs=/tmp
 NoNewPrivileges=true
