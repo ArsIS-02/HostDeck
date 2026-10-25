@@ -21,6 +21,7 @@ from . import db
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 AGENT_DIR = os.environ.get("HOSTDECK_AGENT_DIR", "/agents")   # сюда образ кладёт собранные агенты
 AGENT_FILE = re.compile(r"^hostdeck-agent-(darwin|linux)-(arm64|amd64)$")
+CA_FILE = os.environ.get("HOSTDECK_CA_FILE", "")   # корневой сертификат внутреннего CA, если он есть (отдаётся хостам для установки)
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:\d{1,5})?$")
 SESSION_COOKIE = "hd_session"
 SESSION_TTL = 12 * 3600
@@ -455,7 +456,7 @@ async def token_create(request: Request):
     db.x("INSERT INTO enroll_tokens(token_hash,label,created,expires) VALUES(?,?,?,?)",
          (db.sha(tok), str(data.get("label", ""))[:80], now, now + ENROLL_TTL))
     db.audit(u["name"], "enroll-token-created", detail=str(data.get("label", ""))[:80])
-    return JSONResponse({"token": tok, "expires": now + ENROLL_TTL})
+    return JSONResponse({"token": tok, "expires": now + ENROLL_TTL, "ca_sha256": ca_sha256() if CA_FILE else None})
 
 
 async def audit_list(request: Request):
@@ -585,6 +586,21 @@ def agent_sums():
     return _sums["text"]
 
 
+def ca_sha256():
+    """SHA-256 файла сертификата ровно в том виде, в каком его скачает хост (sha256sum файла)."""
+    try:
+        with open(CA_FILE, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return None
+
+
+async def ca_pem(request: Request):
+    if not CA_FILE or not ca_sha256():
+        return err("сертификат CA не настроен", 404)
+    return FileResponse(CA_FILE, media_type="application/x-pem-file", filename="hostdeck-ca.pem")
+
+
 async def download(request: Request):
     name = request.path_params["name"]
     if name == "SHA256SUMS":
@@ -641,6 +657,7 @@ app = Starlette(
         Route("/api/audit", audit_list),
         Route("/install.sh", install_script),
         Route("/dl/{name}", download),
+        Route("/ca.pem", ca_pem),
         Route("/agent/enroll", agent_enroll, methods=["POST"]),
         Route("/agent/poll", agent_poll, methods=["POST"]),
         Route("/agent/report", agent_report, methods=["POST"]),

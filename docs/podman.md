@@ -34,6 +34,22 @@ systemctl --user status hostdeck
 
 Журнал: `journalctl --user -u hostdeck -f`.
 
+## 3a. Сертификат внутреннего CA для установки агентов
+
+Если хосты не доверяют CA, которым подписан HostDeck (например, внутренний CA Caddy), сервер может раздавать его корневой сертификат. Хост скачивает его и сверяет с отпечатком SHA-256, который окно «Добавить хост» вшивает в команду из вашей авторизованной сессии. Подмена в сети не пройдёт. В системное хранилище сертификат не ставится: он нужен только агенту (`ca_file`).
+
+```bash
+mkdir -p ~/hostdeck-ca && cp ~/caddy-root.crt ~/hostdeck-ca/ca.pem
+diff ~/hostdeck-ca/ca.pem ~/n8n-docker-caddy/caddy_data/caddy/pki/authorities/local/root.crt && echo "это действующий корень Caddy"
+mkdir -p ~/.config/containers/systemd/hostdeck.container.d
+cat > ~/.config/containers/systemd/hostdeck.container.d/ca.conf <<'EOC'
+[Container]
+Volume=/home/redos/hostdeck-ca/ca.pem:/etc/hostdeck/ca.pem:ro,Z
+Environment=HOSTDECK_CA_FILE=/etc/hostdeck/ca.pem
+EOC
+systemctl --user daemon-reload && systemctl --user restart hostdeck
+```
+
 ## 4. Caddy в контейнере (вариант домашней лаборатории)
 
 Юнит подключает HostDeck к podman-сети `n8n-net`, где уже работает контейнер `caddy`. В Caddyfile добавляется блок:

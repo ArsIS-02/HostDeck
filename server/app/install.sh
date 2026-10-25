@@ -6,7 +6,8 @@
 #
 # Переменные окружения (ставятся перед bash: sudo HOSTDECK_TERMINAL=1 bash -s -- ...):
 #   HOSTDECK_TERMINAL=1   разрешить root-консоль из веб-интерфейса на этом хосте (по умолчанию выключено)
-#   HOSTDECK_CA=/путь     корневой сертификат (PEM), если сервер подписан внутренним CA
+#   HOSTDECK_CA=/путь     корневой сертификат (PEM), если сервер подписан внутренним CA. Он используется только
+#                         агентом HostDeck (сохраняется рядом с его конфигом), в системное хранилище не добавляется
 #   HOSTDECK_BIN=/путь    взять агент из файла, а не скачивать
 #   HOSTDECK_DRYRUN=1     только скачать и проверить контрольную сумму, ничего не устанавливая
 set -euo pipefail
@@ -29,6 +30,7 @@ if [ -z "$TOKEN" ] && [ ! -f "$CONF" ]; then
 fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+if [ "$OS" = darwin ]; then CA_DEST="/Library/Application Support/HostDeck/ca.pem"; else CA_DEST=/etc/hostdeck/ca.pem; fi
 CURL=(curl -fsSL --retry 2)
 [ -n "$CA" ] && CURL+=(--cacert "$CA")
 
@@ -44,6 +46,11 @@ else
   echo "Контрольная сумма совпала."
 fi
 chmod 755 "$TMP/agent"
+if [ -n "$CA" ] && [ "${HOSTDECK_DRYRUN:-0}" != 1 ]; then
+  install -d -m 755 "$(dirname "$CA_DEST")"
+  [ "$CA" = "$CA_DEST" ] || install -m 644 "$CA" "$CA_DEST"
+  CA="$CA_DEST"
+fi
 if [ "${HOSTDECK_DRYRUN:-0}" = 1 ]; then echo "DRYRUN: $("$TMP/agent" version) для $OS/$ARCH, установка пропущена."; exit 0; fi
 
 install -d -m 755 /usr/local/bin

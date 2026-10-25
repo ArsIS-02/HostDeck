@@ -10,7 +10,9 @@ tmp = tempfile.mkdtemp(prefix="hd-ui-")
 with socket.socket() as s:
     s.bind(("127.0.0.1", 0)); PORT = s.getsockname()[1]
 pw = secrets.token_urlsafe(12)
-env = dict(os.environ, HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
+CAF = os.path.join(tmp, "ca.pem")
+open(CAF, "w").write("-----BEGIN CERTIFICATE-----\ntest-only\n-----END CERTIFICATE-----\n")
+env = dict(os.environ, HOSTDECK_CA_FILE=CAF, HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
 subprocess.run([sys.executable, os.path.join(ROOT, "tests/seed_demo.py")], env=env, check=True, capture_output=True)
 srv = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT), "--log-level", "warning"], cwd=os.path.join(ROOT, "server"), env=env)
 B = f"http://127.0.0.1:{PORT}"
@@ -73,7 +75,8 @@ try:
                 pg.click("text=Add a host >> nth=0"); pg.wait_for_selector(".dialog")
                 pg.click(".dialog .btn.primary"); pg.wait_for_selector(".dialog .code")
                 cmd = pg.inner_text(".dialog .code")
-                ok("hde_" in cmd and "/install.sh" in cmd and "bash -s --" in cmd, "диалог добавления: выдан токен и команда")
+                ok("hde_" in cmd and "/install.sh" in cmd and "bash -s --" in cmd and "ca.pem" in cmd, "диалог добавления: токен и команда с проверкой CA по отпечатку")
+                pg.click(".dialog .cb"); ok("ca.pem" not in pg.inner_text(".dialog .code"), "флажок CA переключает команду на простую")
                 pg.screenshot(path=f"{OUT}/add-en-dark.png")
                 pg.keyboard.press("Escape"); pg.wait_for_selector(".dialog", state="detached")
                 ok(True, "диалог закрывается по Esc")

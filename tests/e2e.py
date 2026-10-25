@@ -9,7 +9,9 @@ with socket.socket() as s:
     s.bind(("127.0.0.1", 0)); PORT = s.getsockname()[1]
 B = f"http://127.0.0.1:{PORT}"
 pw = secrets.token_urlsafe(12)
-env = dict(os.environ, HOSTDECK_AGENT_DIR=os.path.join(ROOT, "dist"), HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
+CAF = os.path.join(tmp, "ca.pem")
+open(CAF, "w").write("-----BEGIN CERTIFICATE-----\ntest-only\n-----END CERTIFICATE-----\n")
+env = dict(os.environ, HOSTDECK_CA_FILE=CAF, HOSTDECK_AGENT_DIR=os.path.join(ROOT, "dist"), HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
 srv = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(PORT), "--log-level", "warning"],
                        cwd=os.path.join(ROOT, "server"), env=env)
 for _ in range(50):
@@ -42,6 +44,13 @@ res.append(ok(ck.has_nonstandard_attr("HttpOnly") and ck.get_nonstandard_attr("S
 res.append(ok("default-src 'self'" in h.get("Content-Security-Policy",""),"заголовок CSP"))
 s,d,_=call("/api/enroll-tokens","POST",{"label":"e2e"}); tok=d["token"]
 res.append(ok(s==200 and tok.startswith("hde_"),"токен регистрации создан"))
+import hashlib as _h
+caw=_h.sha256(open(CAF,"rb").read()).hexdigest()
+res.append(ok(d.get("ca_sha256")==caw,"ответ с токеном содержит отпечаток CA"))
+sc_,cab=(lambda r:(r.status,r.read()))(urllib.request.urlopen(B+"/ca.pem",timeout=10))
+res.append(ok(sc_==200 and cab==open(CAF,"rb").read(),"/ca.pem отдаёт сертификат CA"))
+bashfp=subprocess.run(["bash","-c",'(sha256sum || shasum -a 256) < "%s" | cut -d" " -f1'%CAF],capture_output=True,text=True).stdout.strip()
+res.append(ok(bashfp==caw,"отпечаток из команды установки совпадает с серверным"))
 # установка: скрипт и бинарники отдаёт сервер
 def raw(path,headers=None):
     r=urllib.request.Request(B+path,headers=headers or {})
