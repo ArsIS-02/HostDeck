@@ -1,0 +1,17 @@
+services:
+  hostdeck:
+    build: .
+    container_name: hostdeck
+    restart: unless-stopped
+    environment:
+      # Пароль первого администратора берётся из файла .env (не коммитится).
+      # Нужен только при первом запуске, когда в базе ещё нет пользователей.
+      HOSTDECK_ADMIN_PASSWORD: ${HOSTDECK_ADMIN_PASSWORD:-}
+      HOSTDECK_ADMIN_USER: ${HOSTDECK_ADMIN_USER:-admin}
+      # Адрес обратного прокси, которому доверяем заголовки X-Forwarded-*
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+    volumes:
+      - ./data:/data
+    # Порт наружу не публикуется: доступ только через обратный прокси (TLS)
+    ports:
+      - "127.0.0.1:8080:8080"
