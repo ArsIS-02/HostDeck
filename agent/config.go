@@ -15,6 +15,8 @@ type Config struct {
 	Name        string `json:"name"`
 	CAFile      string `json:"ca_file,omitempty"`
 	IntervalMin int    `json:"interval_min,omitempty"`
+	// AllowTerminal разрешает администратору открывать root-консоль из веб-интерфейса. По умолчанию выключено.
+	AllowTerminal bool `json:"allow_terminal,omitempty"`
 }
 
 func defaultConfigPath() string {

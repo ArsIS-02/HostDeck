@@ -45,7 +45,7 @@ res.append(ok(s==200 and tok.startswith("hde_"),"токен регистраци
 # агент
 env=dict(os.environ); cfg=os.path.join(tmp,"agent.json")
 if os.path.exists(cfg): os.remove(cfg)
-r=subprocess.run([AGENT,"enroll","-server",B,"-token",tok,"-name","sandbox-linux","-config",cfg],capture_output=True,text=True)
+r=subprocess.run([AGENT,"enroll","-server",B,"-token",tok,"-name","sandbox-linux","-terminal","-config",cfg],capture_output=True,text=True)
 res.append(ok(r.returncode==0,"агент зарегистрирован: "+r.stdout.strip()))
 res.append(ok(oct(os.stat(cfg).st_mode&0o777)=="0o600","конфиг агента 0600"))
 r2=subprocess.run([AGENT,"enroll","-server",B,"-token",tok,"-name","dup","-config",os.path.join(tmp,"dup.json")],capture_output=True,text=True)
@@ -74,6 +74,52 @@ time.sleep(4)
 s,d,_=call("/api/hosts/"+hid)
 res.append(ok(d.get("software_count")==len(sw["items"]),"software_count в сводке хоста"))
 res.append(ok(call("/api/hosts/"+hid+"/software/refresh","POST",{},opener=anon)[0]==401,"запрос ПО без входа -> 401"))
+# терминал (root-консоль): сессия, ввод, вывод, закрытие
+import threading, base64
+res.append(ok(call("/api/hosts/"+hid+"/term","POST",{"cols":100,"rows":30},opener=anon)[0]==401,"терминал без входа -> 401"))
+s,d,_=call("/api/hosts/"+hid+"/term","POST",{"cols":100,"rows":30})
+res.append(ok(s==200 and d.get("sid"),"сессия терминала открыта"))
+sid=d["sid"]
+got=bytearray()
+def reader():
+    r=urllib.request.Request(B+"/api/term/"+sid+"/stream")
+    try:
+        with op.open(r,timeout=30) as resp:
+            ev=None
+            for line in resp:
+                line=line.decode().rstrip("\n")
+                if line.startswith("event:"): ev=line[6:].strip()
+                elif line.startswith("data:"):
+                    if ev=="exit": return
+                    got.extend(base64.b64decode(line[5:].strip()))
+                elif line=="": ev=None
+    except Exception as e: got.extend(("ERR "+str(e)).encode())
+th=threading.Thread(target=reader,daemon=True); th.start()
+time.sleep(1.5)
+call("/api/term/"+sid+"/input","POST",{"d":"id -u; echo hd-$((20+22))\r"})
+for _ in range(30):
+    if b"hd-42" in got: break
+    time.sleep(0.3)
+txt=got.decode(errors="replace")
+res.append(ok("hd-42" in txt,"команда выполнена в консоли, вывод получен через SSE"))
+res.append(ok("\r0\r\nhd-42" in txt and "root@" in txt,"оболочка работает от root (id -u = 0)"))
+call("/api/term/"+sid+"/input","POST",{"d":"exit\r"})
+th.join(15)
+res.append(ok(not th.is_alive(),"после exit поток вывода завершён событием exit"))
+s,au,_=call("/api/audit")
+acts=[r["action"] for r in au]
+res.append(ok("term-open" in acts and "term-closed" in acts,"аудит: открытие и закрытие консоли"))
+# хост без разрешения консоли
+s,d2,_=call("/api/enroll-tokens","POST",{"label":"noterm"})
+cfg2=os.path.join(tmp,"agent2.json")
+subprocess.run([AGENT,"enroll","-server",B,"-token",d2["token"],"-name","no-term","-config",cfg2],capture_output=True)
+ag2=subprocess.Popen([AGENT,"run","-config",cfg2],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+time.sleep(4)
+s,hs,_=call("/api/hosts")
+h2=[h for h in hs if h["name"]=="no-term"][0]
+s,d3,_=call("/api/hosts/"+h2["id"]+"/term","POST",{"cols":100,"rows":30})
+res.append(ok(s==409,"консоль на хосте без allow_terminal отклонена (409)"))
+ag2.terminate()
 # чужой ключ
 bad=urllib.request.Request(B+"/agent/poll",data=b"{}",method="POST",headers={"Content-Type":"application/json","Authorization":"Bearer "+hid+".wrong"})
 try: urllib.request.urlopen(bad,timeout=5); res.append(ok(False,"неверный ключ хоста должен давать 401"))

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Установка агента HostDeck на macOS. Запуск: sudo ./install-mac.sh <адрес сервера> <токен> [имя] [путь к ca.pem]
+# Установка агента HostDeck на macOS. Запуск: sudo [HOSTDECK_TERMINAL=1] ./install-mac.sh <адрес сервера> <токен> [имя] [путь к ca.pem]
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "Запустите через sudo"; exit 1; }
 SERVER="${1:?адрес сервера, например https://hostdeck.apps.monitoring.test}"
@@ -16,6 +16,8 @@ xattr -d com.apple.quarantine /usr/local/bin/hostdeck-agent 2>/dev/null || true
 
 ARGS=(enroll -server "$SERVER" -token "$TOKEN" -name "$NAME")
 [ -n "$CA" ] && ARGS+=(-ca "$CA")
+# root-консоль из веб-интерфейса включается только явно: sudo HOSTDECK_TERMINAL=1 ./install-mac.sh ...
+[ "${HOSTDECK_TERMINAL:-0}" = 1 ] && ARGS+=(-terminal)
 /usr/local/bin/hostdeck-agent "${ARGS[@]}"
 
 PLIST=/Library/LaunchDaemons/local.hostdeck.agent.plist

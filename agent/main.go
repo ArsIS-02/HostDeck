@@ -16,7 +16,7 @@ import (
 func usage() {
 	fmt.Fprintf(os.Stderr, `hostdeck-agent %s
 
-  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-config путь]
+  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-config путь]
   hostdeck-agent run [-config путь]
   hostdeck-agent collect        # один раз собрать состояние и вывести JSON (для проверки)
   hostdeck-agent version
@@ -59,6 +59,7 @@ func cmdEnroll(args []string) {
 	token := fs.String("token", "", "одноразовый токен регистрации")
 	name := fs.String("name", "", "имя хоста (по умолчанию hostname)")
 	ca := fs.String("ca", "", "файл корневого сертификата (PEM), если сервер подписан своим CA")
+	terminal := fs.Bool("terminal", false, "разрешить root-консоль из веб-интерфейса (по умолчанию выключено)")
 	cfgPath := fs.String("config", defaultConfigPath(), "путь к конфигу")
 	_ = fs.Parse(args)
 	if *server == "" || *token == "" {
@@ -80,7 +81,7 @@ func cmdEnroll(args []string) {
 	if err := c.post(ctx, "/agent/enroll", map[string]string{"token": *token, "name": *name, "os": osName(), "version": version}, &r); err != nil {
 		log.Fatalf("регистрация не удалась: %v", err)
 	}
-	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15}
+	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15, AllowTerminal: *terminal}
 	if err := saveConfig(*cfgPath, cfg); err != nil {
 		log.Fatalf("не удалось сохранить конфиг: %v", err)
 	}
@@ -102,6 +103,11 @@ func cmdRun(args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	os_ := osName()
+	allowTerminal = cfg.AllowTerminal
+	defer closeAllTerms()
+	if allowTerminal {
+		log.Printf("внимание: root-консоль из веб-интерфейса разрешена на этом хосте")
+	}
 
 	send := func() {
 		p := collect()
@@ -186,6 +192,14 @@ func cmdRun(args []string) {
 				go send()
 			case "software":
 				go sendSoftware()
+			case "term_open":
+				go termOpen(ctx, c, cmd.SID, cmd.Cols, cmd.Rows)
+			case "term_in":
+				termInput(cmd.SID, cmd.Data)
+			case "term_resize":
+				termResize(cmd.SID, cmd.Cols, cmd.Rows)
+			case "term_close":
+				termClose(cmd.SID)
 			default:
 				log.Printf("неизвестная команда %q", cmd.Type)
 			}

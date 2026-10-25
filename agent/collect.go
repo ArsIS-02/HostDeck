@@ -39,6 +39,9 @@ func collect() Posture {
 	p.Info["agent"] = version
 	p.Info["arch"] = runtime.GOARCH
 	platformCollect(&p)
+	if allowTerminal {
+		p.Info["terminal"] = "on"
+	}
 	p.Checks = append(p.Checks, diskCheck("/"))
 	return p
 }

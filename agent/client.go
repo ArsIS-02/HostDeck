@@ -96,6 +96,10 @@ func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.code, e
 type Command struct {
 	ID   string `json:"id"`
 	Type string `json:"type"`
+	SID  string `json:"sid,omitempty"`
+	Data string `json:"data,omitempty"`
+	Cols int    `json:"cols,omitempty"`
+	Rows int    `json:"rows,omitempty"`
 }
 
 func (c *Client) poll(ctx context.Context) ([]Command, error) {
@@ -124,4 +128,23 @@ func (c *Client) reportSoftware(ctx context.Context, items []SoftwareItem) error
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	return c.post(ctx, "/agent/report", map[string]any{"kind": "software", "data": items}, nil)
+}
+
+func (c *Client) reportTerm(ctx context.Context, sid string, seq int, data []byte, errMsg string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	m := map[string]any{"sid": sid, "seq": seq}
+	if len(data) > 0 {
+		m["data"] = b64(data)
+	}
+	if errMsg != "" {
+		m["error"] = errMsg
+	}
+	return c.post(ctx, "/agent/term", m, nil)
+}
+
+func (c *Client) reportTermExit(ctx context.Context, sid string, code int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return c.post(ctx, "/agent/term", map[string]any{"sid": sid, "exit": true, "code": code}, nil)
 }

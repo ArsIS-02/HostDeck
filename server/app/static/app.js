@@ -343,10 +343,12 @@
   async function addHostDialog() {
     const nameIn = el("input", { class: "input", placeholder: T("add.name"), "aria-label": T("add.name"), maxlength: 60 });
     let osv = "mac";
+    const termCb = checkbox({ label: T("add.terminal") });
     const osSel = select([{ value: "mac", label: T("add.os.mac"), icon: "laptop" }, { value: "macintel", label: T("add.os.macintel"), icon: "laptop" }, { value: "linux", label: T("add.os.linux"), icon: "server" }],
       osv, (v) => { osv = v; }, { label: T("add.os") });
     const body = el("div", { class: "form" }, el("label", { class: "field" }, el("span", {}, T("add.name")), nameIn),
-      el("div", { class: "field" }, el("span", {}, T("add.os")), osSel), el("p", { class: "muted small" }, T("add.token.hint")));
+      el("div", { class: "field" }, el("span", {}, T("add.os")), osSel),
+      el("label", { class: "cb-line" }, termCb, el("span", {}, T("add.terminal"))), el("p", { class: "muted small" }, T("add.token.hint")));
     let created = false;
     await dialog({
       title: T("add.title"), icon: "plus", tone: "info", body, wide: true,
@@ -360,9 +362,10 @@
             created = true;
             const name = nameIn.value.trim();
             const bin = osv === "linux" ? "hostdeck-agent-linux-amd64" : osv === "macintel" ? "hostdeck-agent-darwin-amd64" : "hostdeck-agent-darwin-arm64";
+            const tflag = termCb.checked;
             const cmd = osv === "linux"
-              ? `sudo ./${bin} enroll -server ${location.origin} -token ${r.token}${name ? ` -name ${name}` : ""}\nsudo ./${bin} run`
-              : `sudo ./install-mac.sh ${location.origin} ${r.token}${name ? ` ${name}` : ""}`;
+              ? `sudo ./${bin} enroll -server ${location.origin} -token ${r.token}${name ? ` -name ${name}` : ""}${tflag ? " -terminal" : ""}\nsudo ./${bin} run`
+              : `sudo ${tflag ? "HOSTDECK_TERMINAL=1 " : ""}./install-mac.sh ${location.origin} ${r.token}${name ? ` ${name}` : ""}`;
             const pre = el("pre", { class: "code" }, cmd);
             body.replaceChildren(el("h3", { class: "small-h" }, T("add.cmd.title")), pre, el("p", { class: "muted small" }, T("add.cmd.note")),
               el("div", { class: "row" }, button(T("common.copy"), { icon: "copy", onclick: async (e) => {
@@ -476,7 +479,8 @@
     if (!hostBox || !curHost) return;
     const h = curHost;
     const tabs = [["state", "host.tab.state", "cpu"], ["software", "host.tab.software", "apps"], ["details", "host.tab.details", "info"]];
-    const content = hostTab === "software" ? softwareTab(h) : hostTab === "details" ? detailsTab(h) : stateTab(h);
+    if (me.role === "admin") tabs.push(["terminal", "host.tab.terminal", "terminal"]);
+    const content = hostTab === "software" ? softwareTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
     hostBox.replaceChildren(
       el("div", { class: "tabs", role: "tablist" }, tabs.map(([k, key, ic]) => el("button", { role: "tab", class: "tab" + (hostTab === k ? " active" : ""), "aria-selected": String(hostTab === k),
         onclick: async () => { hostTab = k; if (k === "software" && swState.hostId !== h.id) { swState.items = null; drawHostBody(); await loadSoftware(h); } drawHostBody(); } },
@@ -501,6 +505,7 @@
           chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off"),
           el("span", { class: "spacer" }),
           me.role !== "viewer" ? button(T("host.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${id}/refresh`, { method: "POST", body: {} }); toast(T("host.refresh.queued")); } catch (e) { fail(e); } } }) : null,
+          me.role === "admin" ? button(T("host.console"), { icon: "terminal", onclick: () => { hostTab = "terminal"; drawHostBody(); } }) : null,
           button(T("host.export"), { icon: "download", onclick: () => exportHost(curHost, swState.hostId === id && swState.items ? swState.items : null) }),
           me.role === "admin" ? button("", { icon: "trash", kind: "danger-ghost", title: T("host.delete"), onclick: async () => {
             const ok = await confirmDialog({ title: T("host.delete.title", { name: h.name }), body: T("host.delete.body"), ok: T("common.delete") });
@@ -514,6 +519,102 @@
       }
     })();
     return page;
+  }
+
+  // --- терминал (root) ---------------------------------------------------------------------------------------------
+  const term = { hostId: null, sid: null, emu: null, es: null, state: "idle", screen: null, input: null, sendQ: Promise.resolve(), buf: "", timer: null, raf: 0, cols: 100, rows: 28 };
+  function termDispose() {
+    if (term.es) { term.es.close(); term.es = null; }
+    if (term.sid && term.state !== "closed") { try { fetch(`/api/term/${term.sid}/close`, { method: "POST", credentials: "same-origin", keepalive: true, headers: { "Content-Type": "application/json" }, body: "{}" }); } catch (_) { /* уходим со страницы */ } }
+    Object.assign(term, { hostId: null, sid: null, emu: null, state: "idle", screen: null, input: null, buf: "" });
+  }
+  function termRender() {
+    if (term.raf || !term.emu || !term.screen) return;
+    term.raf = requestAnimationFrame(() => {
+      term.raf = 0;
+      const sc = term.screen, near = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
+      term.emu.renderInto(sc, term.state === "open");
+      if (near) sc.scrollTop = sc.scrollHeight;
+    });
+  }
+  function termSend(s) {
+    term.buf += s;
+    if (term.timer) return;
+    term.timer = setTimeout(() => {
+      const d = term.buf; term.buf = ""; term.timer = null;
+      const sid = term.sid;
+      // запросы идут строго по очереди, иначе ввод может прийти в другом порядке
+      term.sendQ = term.sendQ.then(() => api(`/api/term/${sid}/input`, { method: "POST", body: { d } })).catch(() => {});
+    }, 8);
+  }
+  function termMeasure() {
+    const probe = el("span", { class: "tl", style: { position: "absolute", visibility: "hidden", whiteSpace: "pre" } }, "M".repeat(50));
+    term.screen.append(probe);
+    const w = probe.getBoundingClientRect().width / 50 || 8, avail = term.screen.clientWidth - 28;
+    probe.remove();
+    term.cols = Math.max(40, Math.min(200, Math.floor(avail / w)));
+  }
+  async function termStart(h) {
+    const ok = await confirmDialog({ title: T("term.confirm.title", { name: h.name }), body: T("term.confirm.body"), ok: T("term.confirm.ok"), icon: "terminal" });
+    if (!ok) return;
+    if (term.es) { term.es.close(); term.es = null; }
+    termMeasure();
+    term.state = "connecting"; term.hostId = h.id;
+    term.emu = new window.HDTerm.Emu(term.cols, term.rows, termRender);
+    drawHostBody();
+    let r;
+    try { r = await api(`/api/hosts/${h.id}/term`, { method: "POST", body: { cols: term.cols, rows: term.rows } }); }
+    catch (e) { term.state = "idle"; fail(e); drawHostBody(); return; }
+    term.sid = r.sid; term.sendQ = Promise.resolve();
+    const es = new EventSource(`/api/term/${r.sid}/stream`);
+    term.es = es;
+    es.onmessage = (m) => {
+      if (term.state === "connecting") { term.state = "open"; drawHostBody(); }
+      const bin = atob(m.data), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      term.emu.write(bytes);
+    };
+    es.addEventListener("exit", () => { term.state = "closed"; es.close(); term.es = null; term.emu.write(new TextEncoder().encode("\r\n\x1b[2m[" + T("term.state.closed") + "]\x1b[0m\r\n")); drawHostBody(); });
+    setTimeout(() => term.input && term.input.focus(), 50);
+  }
+  async function termStop() {
+    if (!term.sid) return;
+    try { await api(`/api/term/${term.sid}/close`, { method: "POST", body: {} }); } catch (e) { fail(e); }
+  }
+  function termScreen() {
+    if (term.screen) return term.screen;
+    term.screen = el("div", { class: "term-screen", tabindex: "-1" });
+    term.input = el("textarea", { class: "term-input", autocapitalize: "off", autocomplete: "off", spellcheck: "false", "aria-label": T("host.tab.terminal") });
+    term.input.addEventListener("keydown", (e) => {
+      if (term.state !== "open") return;
+      const seq = window.HDTerm.keySeq(e, term.emu.appCursor);
+      if (seq) { e.preventDefault(); termSend(seq); }
+    });
+    term.input.addEventListener("input", () => {
+      const v = term.input.value; term.input.value = "";
+      if (term.state === "open" && v) termSend(v.replace(/\r?\n/g, "\r"));
+    });
+    term.screen.addEventListener("mouseup", () => { if (!String(getSelection()).length) term.input.focus(); });
+    return term.screen;
+  }
+  function terminalTab(h) {
+    const info = h.info || {};
+    if (!h.online && term.state !== "open") return el("div", { class: "card empty-sm" }, icon("clock", 20), el("span", {}, T("term.offline")));
+    if (info.terminal !== "on" && term.state === "idle") {
+      return el("div", { class: "card" }, el("div", { class: "empty-sm" }, icon("lock", 22), el("strong", {}, T("term.disabled.t"))), el("p", { class: "muted" }, T("term.disabled.d")),
+        el("pre", { class: "code" }, T("term.disabled.cmd1") + "\n" + T("term.disabled.cmd2")));
+    }
+    const st = term.hostId === h.id ? term.state : "idle";
+    const tone = { idle: "unknown", connecting: "warn", open: "ok", closed: "unknown" }[st];
+    const bar = el("div", { class: "toolbar" }, badge(tone, T("term.state." + st)), el("span", { class: "spacer" }),
+      st === "open" ? button(T("term.clear"), { icon: "x", onclick: () => { term.emu.reset(); term.emu.scroll = []; termRender(); term.input.focus(); termSend("\x0c"); } }) : null,
+      st === "open" || st === "connecting" ? button(T("term.close"), { icon: "logout", kind: "danger-ghost", onclick: termStop }) : button(st === "closed" ? T("term.reconnect") : T("term.open"), { icon: "terminal", kind: "primary", onclick: () => termStart(h) }));
+    const screen = termScreen();
+    screen.classList.toggle("live", st === "open");
+    screen.style.height = `calc(${term.rows} * 1.28em + 28px)`;
+    if (st === "idle" && term.emu == null) screen.replaceChildren();
+    return el("div", { class: "term-wrap" }, el("div", { class: "term-warn" }, icon("alert", 18), el("span", {}, T("term.warn"))), bar,
+      el("div", { class: "term-box" }, screen, term.input), el("p", { class: "muted small" }, T("term.hint") + " " + T("term.idle")));
   }
 
   // --- журнал --------------------------------------------------------------------------------------------------------------------------------
@@ -562,6 +663,7 @@
       return;
     }
     const route = parseRoute();
+    if (term.hostId && !(route.name === "host" && route.id === term.hostId)) termDispose();
     if (route.name !== "host") await refreshHosts();
     if (my !== routeToken) return;
     document.title = (TITLES[route.name] ? T(TITLES[route.name]) + " — " : "") + "HostDeck";
@@ -579,7 +681,7 @@
       if (document.hidden || document.querySelector(".veil")) return;
       if (route.name === "hosts") { await refreshHosts(); drawHosts(); }
       else if (route.name === "host") {
-        try { curHost = await api("/api/hosts/" + route.id); drawHostBody(); } catch (_) { /* повторим в следующий раз */ }
+        try { curHost = await api("/api/hosts/" + route.id); if (hostTab !== "terminal") drawHostBody(); } catch (_) { /* повторим в следующий раз */ }
       }
     }, 15000);
   }

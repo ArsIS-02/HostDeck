@@ -1,5 +1,6 @@
 """HostDeck: сервер инвентаризации и управления хостами (Starlette, без внешних зависимостей сверх requirements.txt)."""
 import asyncio
+import base64
 import json
 import os
 import secrets
@@ -9,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -46,6 +47,222 @@ async def body(request: Request):
     if not isinstance(data, dict):
         raise ValueError("ожидается объект JSON")
     return data
+
+
+# --- терминал -------------------------------------------------------------
+TERM_IDLE = 15 * 60         # секунд без ввода -> сессия закрывается
+TERM_MAX_BUFFER = 1 << 20   # сколько вывода держим для переподключения браузера
+TERM_MAX_PER_HOST = 2
+terms = {}                  # sid -> Term
+
+
+class Term:
+    def __init__(self, sid, host_id, user, cols, rows):
+        self.sid, self.host_id, self.user, self.cols, self.rows = sid, host_id, user, cols, rows
+        self.created = self.last_input = time.time()
+        self.chunks = deque()          # (seq, bytes)
+        self.size = 0
+        self.next_seq = 0              # номер для браузера (свой, сквозной)
+        self.agent_seq = 0             # последний принятый от агента, для защиты от дублей
+        self.cond = asyncio.Condition()
+        self.closed = False
+        self.exit_code = None
+        self.error = None
+        self.bytes_in = self.bytes_out = 0
+
+    async def push(self, data: bytes):
+        async with self.cond:
+            self.next_seq += 1
+            self.chunks.append((self.next_seq, data))
+            self.size += len(data)
+            self.bytes_out += len(data)
+            while self.size > TERM_MAX_BUFFER and len(self.chunks) > 1:
+                self.size -= len(self.chunks.popleft()[1])
+            self.cond.notify_all()
+
+    async def finish(self, code=None, error=None):
+        async with self.cond:
+            if not self.closed:
+                self.closed = True
+                self.exit_code, self.error = code, error
+                self.cond.notify_all()
+                dur = int(time.time() - self.created)
+                db.audit(self.user, "term-closed", host=self.host_id,
+                         detail=f"{dur} с, ввод {self.bytes_in} Б, вывод {self.bytes_out} Б" + (f", ошибка: {error}" if error else ""))
+
+
+def term_for(request: Request, user):
+    t = terms.get(request.path_params["sid"])
+    if not t or (t.user != user["name"] and user["role"] != "admin"):
+        return None
+    return t
+
+
+async def term_open(request: Request):
+    u, e = need(request, "admin")  # root-консоль — только администратору
+    if e:
+        return e
+    hid = request.path_params["id"]
+    row = db.q1("SELECT * FROM hosts WHERE id=?", (hid,))
+    if not row:
+        return err("хост не найден", 404)
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    if not (row["last_seen"] and time.time() - row["last_seen"] < ONLINE_WINDOW):
+        return err("хост не в сети", 409)
+    info = (json.loads(row["posture"]) if row["posture"] else {}).get("info", {})
+    if info.get("terminal") != "on":
+        db.audit(u["name"], "term-denied", host=hid, detail="консоль не разрешена на хосте")
+        return err("консоль не разрешена на этом хосте (агент запущен без allow_terminal)", 409)
+    if sum(1 for t in terms.values() if t.host_id == hid and not t.closed) >= TERM_MAX_PER_HOST:
+        return err("слишком много открытых сессий на этом хосте", 429)
+    try:
+        cols = max(20, min(400, int(data.get("cols", 100))))
+        rows = max(5, min(200, int(data.get("rows", 30))))
+    except (TypeError, ValueError):
+        return err("некорректный размер")
+    sid = secrets.token_urlsafe(18)
+    terms[sid] = Term(sid, hid, u["name"], cols, rows)
+    await queue_for(hid).put({"id": secrets.token_hex(4), "type": "term_open", "sid": sid, "cols": cols, "rows": rows})
+    db.audit(u["name"], "term-open", host=hid, detail=client_ip(request))
+    return JSONResponse({"sid": sid})
+
+
+async def term_stream(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    t = term_for(request, u)
+    if not t:
+        return err("сессия не найдена", 404)
+    try:
+        last = int(request.headers.get("last-event-id") or request.query_params.get("from") or 0)
+    except ValueError:
+        last = 0
+
+    async def gen():
+        nonlocal last
+        yield ": ok\n\n"
+        while True:
+            async with t.cond:
+                pending = [(s, d) for s, d in t.chunks if s > last]
+                if not pending and not t.closed:
+                    try:
+                        await asyncio.wait_for(t.cond.wait(), 15)
+                    except asyncio.TimeoutError:
+                        pass
+                    pending = [(s, d) for s, d in t.chunks if s > last]
+                closed = t.closed
+            for s, d in pending:
+                last = s
+                yield f"id: {s}\ndata: {base64.b64encode(d).decode()}\n\n"
+            if closed and not pending:
+                yield f"event: exit\ndata: {json.dumps({'code': t.exit_code, 'error': t.error})}\n\n"
+                return
+            if not pending:
+                yield ": ping\n\n"
+            if await request.is_disconnected():
+                return
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+async def term_input(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    t = term_for(request, u)
+    if not t or t.closed:
+        return err("сессия не найдена", 404)
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    d = data.get("d")
+    if not isinstance(d, str) or not d or len(d) > 8192:
+        return err("некорректный ввод")
+    t.last_input = time.time()
+    t.bytes_in += len(d.encode())
+    await queue_for(t.host_id).put({"id": secrets.token_hex(4), "type": "term_in", "sid": t.sid, "data": d})
+    return JSONResponse({"ok": True})
+
+
+async def term_resize(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    t = term_for(request, u)
+    if not t or t.closed:
+        return err("сессия не найдена", 404)
+    try:
+        data = await body(request)
+        cols, rows = int(data["cols"]), int(data["rows"])
+    except (ValueError, KeyError, TypeError):
+        return err("некорректный размер")
+    await queue_for(t.host_id).put({"id": secrets.token_hex(4), "type": "term_resize", "sid": t.sid, "cols": cols, "rows": rows})
+    return JSONResponse({"ok": True})
+
+
+async def term_close(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    t = term_for(request, u)
+    if not t:
+        return err("сессия не найдена", 404)
+    if not t.closed:
+        await queue_for(t.host_id).put({"id": secrets.token_hex(4), "type": "term_close", "sid": t.sid})
+        # если агент не ответит (завис, офлайн) — закрываем со своей стороны
+        asyncio.get_running_loop().call_later(5, lambda: asyncio.ensure_future(t.finish(None, "закрыто сервером")) if not t.closed else None)
+    return JSONResponse({"ok": True})
+
+
+async def agent_term(request: Request):
+    host = agent_auth(request)
+    if not host:
+        return err("не авторизован", 401)
+    try:
+        data = await body(request)
+    except ValueError as e:
+        return err(str(e))
+    t = terms.get(str(data.get("sid", "")))
+    if not t or t.host_id != host["id"]:
+        return err("сессия не найдена", 404)
+    if data.get("error"):
+        msg = "консоль отключена на хосте" if data["error"] == "disabled" else str(data["error"])[:200]
+        await t.push(f"\r\n\x1b[31m{msg}\x1b[0m\r\n".encode())
+        await t.finish(None, msg)
+    elif data.get("exit"):
+        await t.finish(data.get("code"))
+    else:
+        try:
+            raw = base64.b64decode(str(data.get("data", "")), validate=True)
+        except Exception:
+            return err("некорректные данные")
+        seq = int(data.get("seq", 0) or 0)
+        if seq and seq <= t.agent_seq:
+            return JSONResponse({"ok": True})  # повтор
+        t.agent_seq = max(t.agent_seq, seq)
+        if raw and len(raw) <= 1 << 20:
+            await t.push(raw)
+    return JSONResponse({"ok": True})
+
+
+async def term_janitor():
+    """Закрывает сессии без ввода и забывает давно закрытые."""
+    while True:
+        await asyncio.sleep(30)
+        now = time.time()
+        for sid, t in list(terms.items()):
+            if not t.closed and now - t.last_input > TERM_IDLE:
+                await queue_for(t.host_id).put({"id": secrets.token_hex(4), "type": "term_close", "sid": sid})
+                await t.push("\r\n\x1b[33m[сессия закрыта по бездействию]\x1b[0m\r\n".encode())
+                await t.finish(None, "простой")
+            elif t.closed and now - t.last_input > TERM_IDLE + 300:
+                terms.pop(sid, None)
 
 
 # --- пользователи --------------------------------------------------------
@@ -351,10 +568,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 @asynccontextmanager
 async def lifespan(app):
+    janitor = asyncio.create_task(term_janitor())
     r = db.ensure_admin()
     if r == "no-admin":
         print("HostDeck: пользователей нет. Задайте HOSTDECK_ADMIN_PASSWORD и перезапустите, чтобы создать администратора.", flush=True)
     yield
+    janitor.cancel()
 
 
 app = Starlette(
@@ -374,6 +593,12 @@ app = Starlette(
         Route("/agent/enroll", agent_enroll, methods=["POST"]),
         Route("/agent/poll", agent_poll, methods=["POST"]),
         Route("/agent/report", agent_report, methods=["POST"]),
+        Route("/agent/term", agent_term, methods=["POST"]),
+        Route("/api/hosts/{id}/term", term_open, methods=["POST"]),
+        Route("/api/term/{sid}/stream", term_stream),
+        Route("/api/term/{sid}/input", term_input, methods=["POST"]),
+        Route("/api/term/{sid}/resize", term_resize, methods=["POST"]),
+        Route("/api/term/{sid}/close", term_close, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ],
     middleware=[Middleware(BaseHTTPMiddleware, dispatch=security_headers)],
