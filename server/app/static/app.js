@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const { el, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast } = window.UI;
+  const { el, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast, tip } = window.UI;
   const T = (k, p) => window.I18N.t(k, p);
   const root = document.getElementById("root");
 
@@ -95,6 +95,39 @@
   function checkDetail(c) {
     if (c.id === "disk" && c.detail) return T("val.free", { n: c.detail });
     return c.detail || "";
+  }
+
+
+  // --- справка по проверкам и инструкция администратора (тексты в help.js) ---------------------------------------------------------
+  function checkTip(c) {
+    const H = window.HELP.get(), U = H.ui, info = H.checks[c.id];
+    const val = checkValue(c), det = checkDetail(c);
+    const kids = [el("div", { class: "tip-h" }, el("b", {}, checkLabel(c.id)), badge(c.status, T("status." + c.status), 14))];
+    kids.push(el("div", { class: "now s-" + c.status }, el("b", {}, U.now + ": "), val || T("status." + c.status), det && c.id !== "disk" ? ` · ${det}` : ""));
+    if (info) {
+      kids.push(el("h4", {}, U.what), el("p", {}, info.what));
+      if (c.status === "ok") { kids.push(el("p", { class: "run" }, U.ok)); }
+      else {
+        if (info.risk) kids.push(el("h4", {}, c.status === "info" ? U.info : U.risk), el("p", {}, info.risk));
+        if (c.status === "unknown") kids.push(el("h4", {}, U.unknown), el("p", {}, H.unknown));
+        if (info.fix && info.fix.length && c.status !== "info") kids.push(el("h4", {}, U.fix), el("ul", {}, info.fix.map((x) => el("li", {}, x))));
+        if (info.cmd && c.status !== "info") {
+          kids.push(el("h4", {}, U.cmd), el("pre", {}, info.cmd));
+          if (info.cmd2) kids.push(el("pre", {}, info.cmd2));
+          kids.push(el("p", { class: "run" }, U.run));
+        }
+      }
+    } else if (c.status === "unknown") kids.push(el("h4", {}, U.unknown), el("p", {}, H.unknown));
+    return el("div", {}, kids);
+  }
+
+  function guideDialog() {
+    const G = window.HELP.get().guide;
+    const body = el("div", { class: "guide" }, G.sections.map((s) => el("section", {}, el("h3", {}, s.h),
+      (s.p || []).map((t) => el("p", {}, t)),
+      s.ol ? el("ol", {}, s.ol.map((t) => el("li", {}, t))) : null,
+      s.ul ? el("ul", {}, s.ul.map((t) => el("li", {}, t))) : null)));
+    return dialog({ title: G.title, icon: "book", tone: "info", body, wide: true, cls: "guide-dlg", buttons: [{ text: T("common.close"), value: true, kind: "primary" }] });
   }
 
   // --- CSV ----------------------------------------------------------------------------------------------------
@@ -200,7 +233,8 @@
       el("section", { class: "hero" },
         el("h1", {}, T("home.title")), el("p", { class: "lead" }, T("home.lead")),
         el("div", { class: "hero-cta" }, button(T("home.cta.hosts"), { kind: "primary", onclick: () => { location.hash = "#/hosts"; } }),
-          me.role === "admin" ? button(T("home.cta.add"), { icon: "plus", onclick: addHostDialog }) : null)),
+          me.role === "admin" ? button(T("home.cta.add"), { icon: "plus", onclick: addHostDialog }) : null,
+          me.role === "admin" ? button(T("home.cta.guide"), { icon: "book", onclick: guideDialog }) : null)),
       el("section", { class: "stats" }, stat("server", c.hosts, T("home.stat.hosts"), "neutral"), stat("check", c.online, T("home.stat.online"), "ok"),
         stat("alert", c.warn, T("home.stat.warn"), "warn"), stat("x", c.fail, T("home.stat.problems"), "fail")),
       el("h2", { class: "sec" }, T("home.how.title")), el("section", { class: "grid3" }, how),
@@ -214,7 +248,8 @@
       el("section", { class: "grid2" },
         link("#/hosts", "grid", "home.links.hosts"),
         me.role === "admin" ? link("#/hosts", "plus", "home.links.add", (e) => { e.preventDefault(); location.hash = "#/hosts"; addHostDialog(); }) : null,
-        me.role === "admin" ? link("#/audit", "book", "home.links.audit") : null));
+        me.role === "admin" ? link("#/audit", "book", "home.links.audit") : null,
+        me.role === "admin" ? link("#/", "book", "home.links.guide", (e) => { e.preventDefault(); guideDialog(); }) : null));
   }
 
   // --- список хостов ------------------------------------------------------------------------------------------------------------
@@ -423,7 +458,7 @@
         el("div", { class: "check-body" }, el("div", { class: "check-t" }, checkLabel(c.id)), el("div", { class: "check-v" }, checkValue(c)),
           c.id === "disk" && c.value === "used" ? progress(c.num, { level: c.status === "ok" ? "ok" : c.status }) : null,
           det ? el("div", { class: "check-d muted small" }, det) : null),
-        badge(c.status, "", 18));
+        tip(badge(c.status, "", 18), () => checkTip(c)));
     }));
   }
 

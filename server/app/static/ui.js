@@ -227,7 +227,7 @@
         const x = button(b.text, { kind: b.kind || "", onclick: () => { if (b.keep) b.onclick && b.onclick(x); else done(b.value); } });
         return x;
       });
-      const box = el("div", { class: "dialog" + (opts.wide ? " wide" : ""), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId },
+      const box = el("div", { class: "dialog" + (opts.wide ? " wide" : "") + (opts.cls ? " " + opts.cls : ""), role: "dialog", "aria-modal": "true", "aria-labelledby": titleId },
         el("div", { class: "dialog-head" }, opts.icon ? el("span", { class: "dialog-ico k-" + (opts.tone || "info") }, icon(opts.icon, 22)) : null,
           el("h2", { id: titleId }, opts.title)),
         opts.body ? el("div", { class: "dialog-body" }, opts.body) : null,
@@ -251,6 +251,45 @@
       setTimeout(() => focusTarget && focusTarget.focus(), 30);
     });
   }
+
+  // --- всплывающая подсказка: по наведению, фокусу и касанию; её содержимое можно выделять и копировать -------------------------------
+  let tipBox = null, tipTarget = null, tipTimer = 0;
+  function tipHide() {
+    clearTimeout(tipTimer);
+    if (tipBox) { tipBox.remove(); tipBox = null; }
+    if (tipTarget) { tipTarget.removeAttribute("aria-describedby"); tipTarget = null; }
+  }
+  function tipShow(target, build) {
+    tipHide();
+    const id = "tip-" + Math.random().toString(36).slice(2, 7);
+    tipBox = el("div", { class: "tip", role: "tooltip", id }, build());
+    tipBox.addEventListener("mouseenter", () => clearTimeout(tipTimer));
+    tipBox.addEventListener("mouseleave", () => { tipTimer = setTimeout(tipHide, 180); });
+    document.body.append(tipBox);
+    tipTarget = target; target.setAttribute("aria-describedby", id);
+    const r = target.getBoundingClientRect(), b = tipBox.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = window.innerHeight, gap = 8;
+    let top = r.bottom + gap;
+    if (top + b.height > vh - 8 && r.top - gap - b.height > 8) top = r.top - gap - b.height;   // не помещается снизу — показать сверху
+    top = Math.max(8, Math.min(top, vh - b.height - 8));
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - b.width / 2, vw - b.width - 8));
+    tipBox.style.top = top + "px"; tipBox.style.left = left + "px";
+    tipBox.classList.add("on");
+  }
+  function tip(target, build) {
+    target.classList.add("has-tip");
+    target.setAttribute("tabindex", "0"); target.setAttribute("role", "button");
+    target.setAttribute("aria-label", window.I18N.t("tip.aria"));
+    target.addEventListener("mouseenter", () => { clearTimeout(tipTimer); tipTimer = setTimeout(() => tipShow(target, build), 120); });
+    target.addEventListener("mouseleave", () => { clearTimeout(tipTimer); tipTimer = setTimeout(tipHide, 180); });
+    target.addEventListener("focus", () => tipShow(target, build));
+    target.addEventListener("blur", () => { tipTimer = setTimeout(tipHide, 120); });
+    target.addEventListener("click", (e) => { e.stopPropagation(); if (tipTarget === target) tipHide(); else tipShow(target, build); });   // касание на телефоне
+    target.addEventListener("keydown", (e) => { if (e.key === "Escape") tipHide(); });
+    return target;
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipHide(); });
+  document.addEventListener("scroll", tipHide, true);
+  document.addEventListener("click", (e) => { if (tipBox && !tipBox.contains(e.target) && !(tipTarget && tipTarget.contains(e.target))) tipHide(); });
   async function confirmDialog({ title, body, ok, tone = "danger", icon: ic = "alert" }) {
     const T = window.I18N.t;
     const r = await dialog({ title, icon: ic, tone, body: el("p", {}, body),
@@ -265,5 +304,5 @@
     setTimeout(() => { n.classList.add("out"); setTimeout(() => n.remove(), 250); }, kind === "error" ? 6000 : 3200);
   }
 
-  window.UI = { el, svg, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast, closeSelect };
+  window.UI = { el, svg, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast, closeSelect, tip, tipHide };
 })();
