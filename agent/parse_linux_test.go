@@ -85,3 +85,15 @@ func TestLinuxParsers(t *testing.T) {
 		t.Error("lsblk")
 	}
 }
+
+func TestSchedule(t *testing.T) {
+	if v, ok := parseSchedule("Automatic checking for updates is turned on."); !ok || !v {
+		t.Error("schedule on")
+	}
+	if v, ok := parseSchedule("Automatic checking for updates is turned off."); !ok || v {
+		t.Error("schedule off")
+	}
+	if _, ok := parseSchedule("softwareupdate: error"); ok {
+		t.Error("schedule junk")
+	}
+}

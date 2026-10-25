@@ -364,6 +364,9 @@ def summarize(row, detail=False):
                 counts[st] += 1
             if RANK.get(st, 1) > RANK.get(worst, 0):
                 worst = st
+        # отдельные проверки без данных не должны превращать в «нет данных» хост, у которого остальное в порядке
+        if worst == "unknown" and counts["ok"] > 0:
+            worst = "ok"
     out = {
         "id": row["id"], "name": row["name"], "os": row["os"], "agent_version": row["agent_version"],
         "online": online, "last_seen": row["last_seen"], "posture_at": row["posture_at"],

@@ -112,21 +112,34 @@ func platformCollect(p *Posture) {
 		add("stealth", s, v)
 	}
 
-	// автообновления: ключи com.apple.SoftwareUpdate
-	autoChk := func(key, id string) {
+	// автообновления. Ключ в com.apple.SoftwareUpdate записан не всегда: пока пользователь не менял настройку,
+	// macOS использует значение по умолчанию (включено). Поэтому «не задано» — это не «нет данных».
+	autoChk := func(key, id string, schedule bool) {
+		if schedule {
+			if o, err := run(10*time.Second, "/usr/sbin/softwareupdate", "--schedule"); err == nil || trim(o) != "" {
+				if v, ok := parseSchedule(o); ok {
+					if v {
+						add(id, "ok", "on")
+					} else {
+						add(id, "warn", "off")
+					}
+					return
+				}
+			}
+		}
 		o, _ := run(5*time.Second, "/usr/bin/defaults", "read", "/Library/Preferences/com.apple.SoftwareUpdate", key)
 		v, set := parseDefaultsBool(o)
 		switch {
 		case !set:
-			add(id, "unknown", "unset")
+			add(id, "ok", "default")
 		case v:
 			add(id, "ok", "on")
 		default:
 			add(id, "warn", "off")
 		}
 	}
-	autoChk("AutomaticCheckEnabled", "auto_check")
-	autoChk("CriticalUpdateInstall", "auto_critical")
+	autoChk("AutomaticCheckEnabled", "auto_check", true)
+	autoChk("CriticalUpdateInstall", "auto_critical", false)
 
 	refreshUpdates()
 	updMu.Lock()

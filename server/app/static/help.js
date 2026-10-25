@@ -41,7 +41,7 @@
       },
       auto_check: {
         what: "Автоматическая проверка обновлений: macOS сама сверяется с серверами Apple.",
-        risk: "«Не задано» означает, что параметр не записан в настройках. На практике macOS в таком случае проверяет обновления по умолчанию, поэтому это скорее замечание, чем проблема. «Выключено» — настоящая проблема: об обновлениях вы узнаете только вручную.",
+        risk: "«По умолчанию (включено)» означает, что параметр не записан в настройках: пока вы его не меняли, macOS использует значение по умолчанию — включено. «Выключено» — настоящая проблема: об обновлениях вы узнаете только вручную.",
         fix: ["Системные настройки → Основные → Обновление ПО → кнопка (i) у «Автоматические обновления» → «Проверять наличие обновлений»."],
         cmd: `sudo defaults write ${PREF} AutomaticCheckEnabled -bool true`,
       },
@@ -224,7 +224,7 @@
       },
       auto_check: {
         what: "Automatic update check: macOS contacts Apple's servers on its own.",
-        risk: "“Not set” means the key is not written in preferences. macOS checks by default in that case, so this is a note rather than a problem. “Off” is a real problem: you only learn about updates by hand.",
+        risk: "“Default (on)” means the key is not written in preferences: until you change it, macOS uses its default, which is on. “Off” is a real problem: you only learn about updates by hand.",
         fix: ["System Settings → General → Software Update → (i) next to Automatic Updates → “Check for updates”."],
         cmd: `sudo defaults write ${PREF} AutomaticCheckEnabled -bool true`,
       },

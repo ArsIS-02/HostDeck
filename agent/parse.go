@@ -105,6 +105,18 @@ func parseDefaultsBool(out string) (val bool, set bool) {
 	return false, false
 }
 
+// parseSchedule читает `softwareupdate --schedule`: «Automatic checking for updates is turned on/off».
+func parseSchedule(out string) (val bool, ok bool) {
+	l := strings.ToLower(out)
+	switch {
+	case strings.Contains(l, "turned on"):
+		return true, true
+	case strings.Contains(l, "turned off"):
+		return false, true
+	}
+	return false, false
+}
+
 var bootRe = regexp.MustCompile(`sec\s*=\s*(\d+)`)
 
 func parseBootTime(out string) (int64, bool) {
