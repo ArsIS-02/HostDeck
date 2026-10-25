@@ -4,7 +4,7 @@ WORKDIR /srv
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY server/app ./app
-RUN useradd --system --uid 10001 --no-create-home hostdeck && mkdir -p /data /run/secrets && chown hostdeck /data
+RUN useradd --system --uid 10001 --no-create-home hostdeck && mkdir -p /data /run/secrets && touch /run/secrets/admin_pw && chown hostdeck /data
 USER hostdeck
 VOLUME /data
 ENV HOSTDECK_DB=/data/hostdeck.db
