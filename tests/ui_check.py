@@ -75,7 +75,7 @@ try:
                 pg.click("text=Add a host >> nth=0"); pg.wait_for_selector(".dialog")
                 pg.click(".dialog .btn.primary"); pg.wait_for_selector(".dialog .code")
                 cmd = pg.inner_text(".dialog .code")
-                ok("hde_" in cmd and "/install.sh" in cmd and "bash -s --" in cmd and "ca.pem" in cmd, "диалог добавления: токен и команда с проверкой CA по отпечатку")
+                ok("hde_" in cmd and "/install.sh" in cmd and 'bash "$s"' in cmd and "ca.pem" in cmd and cmd.count("shasum -a 256") == 2 and "--cacert" not in cmd, "диалог добавления: токен и команда с проверкой CA по отпечатку")
                 pg.click(".dialog .cb"); ok("ca.pem" not in pg.inner_text(".dialog .code"), "флажок CA переключает команду на простую")
                 pg.screenshot(path=f"{OUT}/add-en-dark.png")
                 pg.keyboard.press("Escape"); pg.wait_for_selector(".dialog", state="detached")

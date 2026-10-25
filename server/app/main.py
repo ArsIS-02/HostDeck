@@ -456,7 +456,9 @@ async def token_create(request: Request):
     db.x("INSERT INTO enroll_tokens(token_hash,label,created,expires) VALUES(?,?,?,?)",
          (db.sha(tok), str(data.get("label", ""))[:80], now, now + ENROLL_TTL))
     db.audit(u["name"], "enroll-token-created", detail=str(data.get("label", ""))[:80])
-    return JSONResponse({"token": tok, "expires": now + ENROLL_TTL, "ca_sha256": ca_sha256() if CA_FILE else None})
+    script = render_install(request)
+    return JSONResponse({"token": tok, "expires": now + ENROLL_TTL, "ca_sha256": ca_sha256() if CA_FILE else None,
+                         "install_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest() if script else None})
 
 
 async def audit_list(request: Request):
@@ -556,12 +558,19 @@ async def agent_report(request: Request):
 
 
 # --- установка агента: скрипт и бинарники отдаёт сам сервер -------------------
-async def install_script(request: Request):
+def render_install(request: Request):
     host = request.headers.get("host", "")
     if not HOST_RE.match(host):
-        return PlainTextResponse("некорректный заголовок Host\n", status_code=400)
+        return None
     with open(os.path.join(os.path.dirname(__file__), "install.sh"), encoding="utf-8") as f:
-        text = f.read().replace("@@SERVER@@", f"{request.url.scheme}://{host}")
+        text = f.read()
+    return text.replace("@@SERVER@@", f"{request.url.scheme}://{host}").replace("@@SUMS@@", agent_sums().rstrip("\n"))
+
+
+async def install_script(request: Request):
+    text = render_install(request)
+    if text is None:
+        return PlainTextResponse("некорректный заголовок Host\n", status_code=400)
     return PlainTextResponse(text, media_type="text/x-shellscript; charset=utf-8")
 
 

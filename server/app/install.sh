@@ -17,6 +17,10 @@ case "$SERVER" in @@*) echo "Не задан адрес сервера: запу
 TOKEN="${1:-}"
 NAME="${2:-$(hostname -s 2>/dev/null || hostname)}"
 CA="${HOSTDECK_CA:-}"
+# Контрольные суммы агентов сервер вшивает в сам скрипт. Сам скрипт проверяется по хешу из команды установки,
+# поэтому цепочка доверия не зависит от TLS-клиента (системный curl в macOS игнорирует --cacert).
+SUMS='@@SUMS@@'
+case "$SUMS" in @@*) SUMS="";; esac
 
 [ "$(id -u)" = 0 ] || [ "${HOSTDECK_DRYRUN:-0}" = 1 ] || { echo "Запустите от root (через sudo)"; exit 1; }
 
@@ -32,14 +36,17 @@ fi
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 if [ "$OS" = darwin ]; then CA_DEST="/Library/Application Support/HostDeck/ca.pem"; else CA_DEST=/etc/hostdeck/ca.pem; fi
 CURL=(curl -fsSL --retry 2)
-[ -n "$CA" ] && CURL+=(--cacert "$CA")
+if [ -n "$CA" ]; then
+  # при вшитых суммах канал можно не проверять: подлинность файла доказывает хеш; иначе проверяем по CA
+  if [ -n "$SUMS" ]; then CURL+=(-k); else CURL+=(--cacert "$CA"); fi
+fi
 
 if [ -n "${HOSTDECK_BIN:-}" ]; then
   cp "$HOSTDECK_BIN" "$TMP/agent"
 else
   echo "Скачиваю $FILE с $SERVER ..."
   "${CURL[@]}" "$SERVER/dl/$FILE" -o "$TMP/agent"
-  "${CURL[@]}" "$SERVER/dl/SHA256SUMS" -o "$TMP/sums"
+  if [ -n "$SUMS" ]; then printf '%s\n' "$SUMS" > "$TMP/sums"; else "${CURL[@]}" "$SERVER/dl/SHA256SUMS" -o "$TMP/sums"; fi
   WANT="$(awk -v f="$FILE" '$2==f {print $1}' "$TMP/sums")"
   if command -v sha256sum >/dev/null; then GOT="$(sha256sum "$TMP/agent" | awk '{print $1}')"; else GOT="$(shasum -a 256 "$TMP/agent" | awk '{print $1}')"; fi
   [ -n "$WANT" ] && [ "$WANT" = "$GOT" ] || { echo "Контрольная сумма не совпала (ожидалась $WANT, получена $GOT). Установка прервана."; exit 1; }

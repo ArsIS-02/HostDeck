@@ -357,14 +357,16 @@
             const r = await api("/api/enroll-tokens", { method: "POST", body: { label: nameIn.value } });
             created = true;
             const name = nameIn.value.trim();
-            const caSha = r.ca_sha256;
+            const caSha = r.install_sha256 ? r.ca_sha256 : null;
             const caCb = caSha ? checkbox({ label: T("add.ca"), checked: true }) : null;
             const build = () => {
               const o = location.origin, tf = termCb.checked ? "HOSTDECK_TERMINAL=1 " : "";
               const tail = `${r.token}${name ? ` ${name}` : ""}`;
               if (caCb && caCb.checked) {
-                // сертификат CA скачивается без проверки только ради сверки отпечатка, который взят из этой (авторизованной) страницы
-                return `f=$(mktemp) && curl -fsSLk ${o}/ca.pem -o "$f" && [ "$( (sha256sum || shasum -a 256) < "$f" | cut -d' ' -f1)" = ${caSha} ] && curl -fsSL --cacert "$f" ${o}/install.sh | sudo ${tf}HOSTDECK_CA="$f" bash -s -- ${tail}`;
+                // CA и скрипт скачиваются без проверки канала: подлинность доказывают отпечатки из этой (авторизованной) страницы.
+                // Скрипт содержит контрольные суммы агентов, а регистрацию с токеном делает сам агент с проверкой по CA.
+                const h = (v) => `"$( (sha256sum || shasum -a 256) < "${v}" 2>/dev/null | cut -d' ' -f1)"`;
+                return `f=$(mktemp) && s=$(mktemp) && curl -fsSLk ${o}/ca.pem -o "$f" && curl -fsSLk ${o}/install.sh -o "$s" && [ ${h("$f")} = ${caSha} ] && [ ${h("$s")} = ${r.install_sha256} ] && sudo ${tf}HOSTDECK_CA="$f" bash "$s" ${tail}`;
               }
               return `curl -fsSL ${o}/install.sh | sudo ${tf}bash -s -- ${tail}`;
             };

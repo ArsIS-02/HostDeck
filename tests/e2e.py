@@ -70,6 +70,10 @@ res.append(ok(raw("/dl/..%2f..%2fetc%2fpasswd")[0]==404 and raw("/dl/evil")[0]==
 sc=os.path.join(tmp,"install.sh"); open(sc,"wb").write(scr)
 r=subprocess.run(["bash",sc,"dryrun-token"],env=dict(os.environ,HOSTDECK_DRYRUN="1"),capture_output=True,text=True)
 res.append(ok(r.returncode==0 and "Контрольная сумма совпала" in r.stdout and "DRYRUN" in r.stdout,"скрипт установки: скачивание и проверка суммы (dry-run) "+r.stdout.strip().replace("\n"," | ")[-120:]+r.stderr[-120:]))
+res.append(ok(d.get("install_sha256")==hashlib.sha256(scr).hexdigest(),"хеш скрипта в ответе с токеном совпадает с отданным скриптом"))
+res.append(ok(b"@@SUMS@@" not in scr and want.encode() in scr,"контрольные суммы агентов вшиты в скрипт"))
+r=subprocess.run(["bash",sc,"dryrun-token"],env=dict(os.environ,HOSTDECK_DRYRUN="1",HOSTDECK_CA=CAF,PATH="/nonexistent-curl:"+os.environ["PATH"]),capture_output=True,text=True)
+res.append(ok(r.returncode==0 and "DRYRUN" in r.stdout,"режим с CA: суммы берутся из скрипта (dry-run) "+(r.stdout+r.stderr).strip().replace("\n"," | ")[-120:]))
 # агент
 env=dict(os.environ); cfg=os.path.join(tmp,"agent.json")
 if os.path.exists(cfg): os.remove(cfg)
