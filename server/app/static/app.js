@@ -149,7 +149,7 @@
   function topbar(route) {
     const nav = (href, key, ic, active) => el("a", { href, class: "nav-item" + (active ? " active" : ""), "aria-current": active ? "page" : null }, icon(ic, 17), el("span", {}, T(key)));
     return el("header", { class: "topbar" },
-      el("a", { class: "brand", href: "#/" }, el("span", { class: "logo" }, icon("server", 18)), el("span", {}, "HostDeck")),
+      el("a", { class: "brand", href: "#/" }, el("img", { class: "logo-img", src: "/static/logo.svg", alt: "", width: 32, height: 32 }), el("span", {}, "HostDeck")),
       el("nav", { class: "nav", "aria-label": T("top.menu") },
         nav("#/", "nav.home", "home", route.name === "home"),
         nav("#/hosts", "nav.hosts", "grid", route.name === "hosts" || route.name === "host"),
@@ -179,7 +179,7 @@
         renderAll();
       } catch (ex) { err.textContent = ex.message; }
     } },
-      el("span", { class: "logo big" }, icon("server", 30)),
+      el("img", { class: "logo-img big", src: "/static/logo.svg", alt: "HostDeck", width: 76, height: 76 }),
       el("h1", {}, T("login.title")), el("p", { class: "muted" }, T("login.sub")),
       name, pw, err, button(T("login.submit"), { type: "submit", kind: "primary wide" }));
     setTimeout(() => name.focus(), 30);
