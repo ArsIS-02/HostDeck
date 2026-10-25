@@ -98,6 +98,25 @@
   }
 
 
+
+  // Значок ОС: если в static/os лежат свои файлы (apple.svg / tux.svg, либо .png), показываем их, иначе обычный значок устройства.
+  // Список файлов спрашиваем у сервера один раз, чтобы браузер не получал 404 за отсутствующими.
+  let osLogos = {};
+  async function loadOsLogos() { try { osLogos = await (await fetch("/api/os-logos")).json(); } catch (_) { osLogos = {}; } }
+  function osMark(h, size) {
+    const os = `${h.os || ""} ${(h.info && h.info.os) || ""}`.toLowerCase();
+    const base = os.includes("linux") ? "tux" : /mac|darwin/.test(os) ? "apple" : null;
+    const url = base && osLogos[base];
+    if (!url) return icon(hostIcon(h), size);
+    return el("span", { class: "os-logo logo-mark", style: { width: size + "px", height: size + "px" } },
+      el("img", { src: url, alt: "", width: size, height: size, draggable: "false" }));
+  }
+
+  function avatar(h, cls, size) {
+    const m = osMark(h, size);
+    return el("span", { class: `avatar ${cls}${m.classList.contains("logo-mark") ? " logo" : ""}`.trim() }, m);
+  }
+
   // --- справка по проверкам и инструкция администратора (тексты в help.js) ---------------------------------------------------------
   function checkTip(c, h) {
     const H = window.HELP.get(), U = H.ui, lin = h && (h.os || "").toLowerCase() === "linux";
@@ -282,7 +301,7 @@
     const card = el("article", { class: "card host-card" + (selected.has(h.id) ? " sel" : "") + (h.online ? "" : " off"), tabindex: "0", role: "link", "aria-label": h.name,
       onclick: (e) => { if (!e.target.closest(".cb")) location.hash = "#/host/" + h.id; },
       onkeydown: (e) => { if (e.key === "Enter" && e.target === card) location.hash = "#/host/" + h.id; } },
-      el("div", { class: "hc-top" }, el("label", { class: "cb-wrap" }, cb), el("span", { class: "avatar" }, icon(hostIcon(h), 24)),
+      el("div", { class: "hc-top" }, el("label", { class: "cb-wrap" }, cb), avatar(h, "", 28),
         el("div", { class: "hc-title" }, el("h3", {}, h.name), el("div", { class: "muted small" }, [i.model, osLine(i)].filter(Boolean).join(" · "))),
         badge(h.status, T("status." + h.status))),
       el("div", { class: "chips" }, i.chip ? chip("cpu", i.chip) : null, i.memory ? chip("memory", i.memory) : null, chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off")),
@@ -303,7 +322,7 @@
         onclick: (e) => { if (!e.target.closest(".cb")) location.hash = "#/host/" + h.id; },
         onkeydown: (e) => { if (e.key === "Enter" && e.target === tr) location.hash = "#/host/" + h.id; } },
         el("td", { class: "c-cb" }, cb),
-        el("td", {}, el("div", { class: "cell-host" }, el("span", { class: "avatar sm" }, icon(hostIcon(h), 18)),
+        el("td", {}, el("div", { class: "cell-host" }, avatar(h, "sm", 22),
           el("div", {}, el("div", { class: "strong" }, h.name), el("div", { class: "muted small" }, i.model || i.chip || "")))),
         el("td", {}, badge(h.status, T("status." + h.status))),
         el("td", { class: "hide-m" }, osLine(i)),
@@ -543,7 +562,7 @@
         const x = h.info || {};
         document.title = h.name + " — HostDeck";
         head.replaceChildren(
-          el("span", { class: "avatar lg" }, icon(hostIcon(h), 30)),
+          avatar(h, "lg", 38),
           el("div", { class: "host-title" }, el("h1", {}, h.name), el("div", { class: "muted" }, [x.model, osLine(x), x.chip].filter(Boolean).join(" · "))),
           badge(h.status, T("status." + h.status), 16),
           chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off"),
@@ -732,5 +751,5 @@
 
   window.addEventListener("hashchange", renderAll);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") window.UI.closeSelect(); });
-  renderAll();
+  loadOsLogos().then(renderAll);
 })();

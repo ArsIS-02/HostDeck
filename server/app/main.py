@@ -623,6 +623,17 @@ async def download(request: Request):
     return FileResponse(path, media_type="application/octet-stream", filename=name)
 
 
+async def os_logos(request: Request):
+    """Какие собственные значки ОС положены в static/os (чтобы браузер не стучался за отсутствующими файлами)."""
+    found = {}
+    for base in ("apple", "tux"):
+        for ext in ("svg", "png"):
+            if os.path.isfile(os.path.join(STATIC, "os", f"{base}.{ext}")):
+                found[base] = f"/static/os/{base}.{ext}"
+                break
+    return JSONResponse(found)
+
+
 async def index(request: Request):
     return FileResponse(os.path.join(STATIC, "index.html"))
 
@@ -664,6 +675,7 @@ app = Starlette(
         Route("/api/hosts/{id}", host_delete, methods=["DELETE"]),
         Route("/api/enroll-tokens", token_create, methods=["POST"]),
         Route("/api/audit", audit_list),
+        Route("/api/os-logos", os_logos),
         Route("/install.sh", install_script),
         Route("/dl/{name}", download),
         Route("/ca.pem", ca_pem),

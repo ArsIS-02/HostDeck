@@ -131,7 +131,10 @@ try:
             pg.wait_for_selector(".term-screen:has-text('root@')", timeout=15000)
             ok(True, "терминал: сессия открыта, приглашение root@ получено")
             pg.keyboard.type("echo hello-$((6*7))"); pg.keyboard.press("Enter")
-            pg.wait_for_selector(".term-screen:has-text('hello-42')", timeout=10000)
+            try:
+                pg.wait_for_selector(".term-screen:has-text('hello-42')", timeout=10000)
+            except Exception:
+                print("ЭКРАН ТЕРМИНАЛА:\n" + pg.inner_text(".term-screen")); raise
             ok(True, "терминал: команда выполнена, вывод отображён")
             pg.keyboard.type("ls --color=always /etc | head -3; printf '\\033[31mRED\\033[0m\\n'"); pg.keyboard.press("Enter")
             pg.wait_for_selector(".term-screen span[style*='color']", timeout=10000)
@@ -154,6 +157,15 @@ try:
         pg = ctx.new_page(); pg.on("pageerror", lambda e: errors.append(str(e)))
         pg.goto(B + "/"); pg.fill("#u", "admin"); pg.fill("#p", pw); pg.click("button[type=submit]"); pg.wait_for_selector(".hero")
         pg.goto(B + "/#/hosts"); pg.wait_for_selector(".host-card"); pg.screenshot(path=f"{OUT}/mobile-hosts.png", full_page=True)
+        ok(pg.evaluate("document.querySelectorAll('.host-card .avatar img').length") == 0, "без своих файлов в карточках обычные значки устройств")
+        osdir = os.path.join(ROOT, "server/app/static/os"); logo = os.path.join(osdir, "tux.svg")
+        open(logo, "w").write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#222"/></svg>')
+        try:
+            pg.goto(B + "/#/hosts"); pg.reload(); pg.wait_for_selector(".host-card")
+            pg.wait_for_selector(".host-card .avatar.logo img", timeout=8000)
+            ok(pg.evaluate("[...document.querySelectorAll('.host-card .avatar img')].every(i => i.naturalWidth > 0)"), "свой значок Linux (tux.svg) показан в карточке Linux-хоста")
+        finally:
+            os.remove(logo)
         ok(pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), "мобильный вид без горизонтальной прокрутки")
         pg.goto(B + "/#/"); pg.wait_for_selector(".hero")
         pg.click(".hero-cta .btn >> nth=2"); pg.wait_for_selector(".guide")
