@@ -288,7 +288,7 @@
     return target;
   }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipHide(); });
-  document.addEventListener("scroll", tipHide, true);
+  document.addEventListener("scroll", (e) => { if (!(tipBox && e.target instanceof Node && tipBox.contains(e.target))) tipHide(); }, true);   // прокрутка внутри самой подсказки её не закрывает
   document.addEventListener("click", (e) => { if (tipBox && !tipBox.contains(e.target) && !(tipTarget && tipTarget.contains(e.target))) tipHide(); });
   async function confirmDialog({ title, body, ok, tone = "danger", icon: ic = "alert" }) {
     const T = window.I18N.t;

@@ -80,7 +80,7 @@
   }
 
   // --- проверки: подписи и значения ------------------------------------------------------------------------
-  const CHECK_ICON = { filevault: "lock", sip: "shield", gatekeeper: "shield", firewall: "flame", stealth: "eye", auto_check: "refresh",
+  const CHECK_ICON = { selinux: "shield", iptables: "list", sshd: "key", pkg_updates: "download", reboot: "refresh", auditd: "book", time_sync: "clock", failed_units: "alert", luks: "lock", filevault: "lock", sip: "shield", gatekeeper: "shield", firewall: "flame", stealth: "eye", auto_check: "refresh",
     auto_critical: "refresh", updates: "download", screenlock: "lock", ssh: "key", mdm: "sliders", disk: "disk", platform: "info" };
   const checkLabel = (id) => (window.I18N.has("check." + id) ? T("check." + id) : id);
   function checkValue(c) {
@@ -89,7 +89,7 @@
     if (v === "used") return T("val.used", { n: Math.round(c.num || 0) });
     if (v === "available") return T("val.available", { n: c.num });
     if (v === "none") return T("val.none") + (c.num ? ` (${T("val.checked", { t: ago(c.num) })})` : "");
-    if (v && window.I18N.has("val." + v)) return T("val." + v);
+    if (v && window.I18N.has("val." + v)) return T("val." + v, { n: c.num });
     return v || (c.status === "unknown" ? T("status.unknown") : "");
   }
   function checkDetail(c) {
@@ -99,8 +99,9 @@
 
 
   // --- справка по проверкам и инструкция администратора (тексты в help.js) ---------------------------------------------------------
-  function checkTip(c) {
-    const H = window.HELP.get(), U = H.ui, info = H.checks[c.id];
+  function checkTip(c, h) {
+    const H = window.HELP.get(), U = H.ui, lin = h && (h.os || "").toLowerCase() === "linux";
+    const info = (lin && H.checksLinux[c.id]) || H.checks[c.id];
     const val = checkValue(c), det = checkDetail(c);
     const kids = [el("div", { class: "tip-h" }, el("b", {}, checkLabel(c.id)), badge(c.status, T("status." + c.status), 14))];
     kids.push(el("div", { class: "now s-" + c.status }, el("b", {}, U.now + ": "), val || T("status." + c.status), det && c.id !== "disk" ? ` · ${det}` : ""));
@@ -458,7 +459,7 @@
         el("div", { class: "check-body" }, el("div", { class: "check-t" }, checkLabel(c.id)), el("div", { class: "check-v" }, checkValue(c)),
           c.id === "disk" && c.value === "used" ? progress(c.num, { level: c.status === "ok" ? "ok" : c.status }) : null,
           det ? el("div", { class: "check-d muted small" }, det) : null),
-        tip(badge(c.status, "", 18), () => checkTip(c)));
+        tip(badge(c.status, "", 18), () => checkTip(c, h)));
     }));
   }
 

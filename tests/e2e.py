@@ -91,6 +91,8 @@ res.append(ok(s==200 and len(hosts)==1 and hosts[0]["online"] and hosts[0]["post
 hid=hosts[0]["id"]
 s,d,_=call("/api/hosts/"+hid)
 res.append(ok(len(d["checks"])>=2 and d["info"].get("os"),"подробности хоста: проверок=%d"%len(d["checks"])))
+ids={c["id"] for c in d["checks"]}
+res.append(ok("platform" not in ids and "disk" in ids and ("iptables" in ids or "failed_units" in ids or "pkg_updates" in ids),"Linux-проверки собраны: "+", ".join(sorted(ids))))
 t0=d["posture_at"]
 call("/api/hosts/"+hid+"/refresh","POST",{})
 time.sleep(3)
