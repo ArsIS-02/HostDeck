@@ -44,20 +44,16 @@ func collect() Posture {
 }
 
 func diskCheck(path string) Check {
-	c := Check{ID: "disk", Label: "Свободное место на диске"}
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(path, &st); err != nil {
-		c.Status, c.Detail = "unknown", err.Error()
-		return c
-	}
-	total := float64(st.Blocks) * float64(st.Bsize)
-	avail := float64(st.Bavail) * float64(st.Bsize)
-	if total == 0 {
+	c := Check{ID: "disk"}
+	total, free, ok := diskUsage(path)
+	if !ok || total == 0 {
 		c.Status = "unknown"
 		return c
 	}
-	used := (total - avail) / total * 100
-	c.Value = fmt.Sprintf("занято %.0f%%, свободно %.1f ГБ", used, avail/1e9)
+	used := (total - free) / total * 100
+	c.Num = used
+	c.Value = "used"
+	c.Detail = fmt.Sprintf("%.1f", free/1e9)
 	switch {
 	case used >= 95:
 		c.Status = "fail"
@@ -69,17 +65,12 @@ func diskCheck(path string) Check {
 	return c
 }
 
-func fmtDuration(sec int64) string {
-	d := sec / 86400
-	h := (sec % 86400) / 3600
-	m := (sec % 3600) / 60
-	switch {
-	case d > 0:
-		return fmt.Sprintf("%d д %d ч", d, h)
-	case h > 0:
-		return fmt.Sprintf("%d ч %d мин", h, m)
+func diskUsage(path string) (total, free float64, ok bool) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0, 0, false
 	}
-	return fmt.Sprintf("%d мин", m)
+	return float64(st.Blocks) * float64(st.Bsize), float64(st.Bavail) * float64(st.Bsize), true
 }
 
 func trim(s string) string { return strings.TrimSpace(s) }

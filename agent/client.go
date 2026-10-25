@@ -113,3 +113,15 @@ func (c *Client) reportPosture(ctx context.Context, p Posture, osName string) er
 	defer cancel()
 	return c.post(ctx, "/agent/report", map[string]any{"kind": "posture", "data": p, "version": version, "os": osName}, nil)
 }
+
+func (c *Client) reportMetrics(ctx context.Context, m Metrics) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return c.post(ctx, "/agent/report", map[string]any{"kind": "metrics", "data": m}, nil)
+}
+
+func (c *Client) reportSoftware(ctx context.Context, items []SoftwareItem) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	return c.post(ctx, "/agent/report", map[string]any{"kind": "software", "data": items}, nil)
+}

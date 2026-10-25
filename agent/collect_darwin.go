@@ -59,74 +59,74 @@ func platformCollect(p *Posture) {
 	}
 	if o, err := run(5*time.Second, "/usr/sbin/sysctl", "-n", "hw.memsize"); err == nil {
 		if n, err := strconv.ParseInt(trim(o), 10, 64); err == nil {
-			info["memory"] = fmt.Sprintf("%d ГБ", n/(1<<30))
+			info["memory"] = fmt.Sprintf("%d GB", n/(1<<30))
 		}
 	}
 	if o, err := run(5*time.Second, "/usr/sbin/sysctl", "-n", "kern.boottime"); err == nil {
 		if sec, ok := parseBootTime(o); ok {
-			info["uptime"] = fmtDuration(time.Now().Unix() - sec)
+			info["boot_time"] = strconv.FormatInt(sec, 10)
 		}
 	}
 	if o, err := run(5*time.Second, "/usr/bin/stat", "-f", "%Su", "/dev/console"); err == nil {
 		info["console_user"] = trim(o)
 	}
 
-	add := func(id, label, status, value string) {
-		p.Checks = append(p.Checks, Check{ID: id, Label: label, Status: status, Value: value})
+	add := func(id, status, value string) {
+		p.Checks = append(p.Checks, Check{ID: id, Status: status, Value: value})
 	}
-	unknown := func(id, label string, err error, out string) {
+	unknown := func(id string, err error, out string) {
 		d := trim(out)
 		if err != nil && d == "" {
 			d = err.Error()
 		}
-		p.Checks = append(p.Checks, Check{ID: id, Label: label, Status: "unknown", Detail: d})
+		p.Checks = append(p.Checks, Check{ID: id, Status: "unknown", Detail: d})
 	}
 
 	if o, err := run(10*time.Second, "/usr/bin/fdesetup", "status"); err != nil && trim(o) == "" {
-		unknown("filevault", "Шифрование диска (FileVault)", err, o)
+		unknown("filevault", err, o)
 	} else {
 		s, v := parseFileVault(o)
-		add("filevault", "Шифрование диска (FileVault)", s, v)
+		add("filevault", s, v)
 	}
 	if o, err := run(10*time.Second, "/usr/bin/csrutil", "status"); err != nil && trim(o) == "" {
-		unknown("sip", "SIP (защита целостности системы)", err, o)
+		unknown("sip", err, o)
 	} else {
 		s, v := parseSIP(o)
-		add("sip", "SIP (защита целостности системы)", s, v)
+		add("sip", s, v)
 	}
 	if o, err := run(10*time.Second, "/usr/sbin/spctl", "--status"); err != nil && trim(o) == "" {
-		unknown("gatekeeper", "Gatekeeper", err, o)
+		unknown("gatekeeper", err, o)
 	} else {
 		s, v := parseGatekeeper(o)
-		add("gatekeeper", "Gatekeeper", s, v)
+		add("gatekeeper", s, v)
 	}
 	const sfw = "/usr/libexec/ApplicationFirewall/socketfilterfw"
 	if o, err := run(10*time.Second, sfw, "--getglobalstate"); err != nil && trim(o) == "" {
-		unknown("firewall", "Брандмауэр", err, o)
+		unknown("firewall", err, o)
 	} else {
 		s, v := parseFirewall(o)
-		add("firewall", "Брандмауэр", s, v)
+		add("firewall", s, v)
 	}
 	if o, err := run(10*time.Second, sfw, "--getstealthmode"); err == nil || trim(o) != "" {
 		s, v := parseStealth(o)
-		add("stealth", "Режим невидимки (stealth)", s, v)
+		add("stealth", s, v)
 	}
 
 	// автообновления: ключи com.apple.SoftwareUpdate
-	autoChk := func(key, label, id string) {
+	autoChk := func(key, id string) {
 		o, _ := run(5*time.Second, "/usr/bin/defaults", "read", "/Library/Preferences/com.apple.SoftwareUpdate", key)
 		v, set := parseDefaultsBool(o)
 		switch {
 		case !set:
-			add(id, label, "unknown", "не задано")
+			add(id, "unknown", "unset")
 		case v:
-			add(id, label, "ok", "включено")
+			add(id, "ok", "on")
 		default:
-			add(id, label, "warn", "выключено")
+			add(id, "warn", "off")
 		}
 	}
-	autoChk("AutomaticCheckEnabled", "Автопроверка обновлений", "auto_check")
-	autoChk("CriticalUpdateInstall", "Автоустановка обновлений безопасности", "auto_critical")
+	autoChk("AutomaticCheckEnabled", "auto_check")
+	autoChk("CriticalUpdateInstall", "auto_critical")
 
 	refreshUpdates()
 	updMu.Lock()
@@ -134,25 +134,25 @@ func platformCollect(p *Posture) {
 	updMu.Unlock()
 	switch {
 	case at.IsZero() && busy:
-		p.Checks = append(p.Checks, Check{ID: "updates", Label: "Доступные обновления macOS", Status: "unknown", Detail: "проверка выполняется"})
+		p.Checks = append(p.Checks, Check{ID: "updates", Status: "unknown", Value: "running"})
 	case !known:
-		p.Checks = append(p.Checks, Check{ID: "updates", Label: "Доступные обновления macOS", Status: "unknown", Detail: "не удалось получить список"})
+		p.Checks = append(p.Checks, Check{ID: "updates", Status: "unknown", Value: "failed"})
 	case len(titles) == 0:
-		p.Checks = append(p.Checks, Check{ID: "updates", Label: "Доступные обновления macOS", Status: "ok", Value: "обновлений нет", Detail: "проверено " + at.Format("02.01 15:04")})
+		p.Checks = append(p.Checks, Check{ID: "updates", Status: "ok", Value: "none", Num: float64(at.Unix())})
 	default:
-		p.Checks = append(p.Checks, Check{ID: "updates", Label: "Доступные обновления macOS", Status: "warn",
-			Value: fmt.Sprintf("доступно: %d", len(titles)), Detail: strings.Join(titles, "; ")})
+		p.Checks = append(p.Checks, Check{ID: "updates", Status: "warn",
+			Value: "available", Num: float64(len(titles)), Detail: strings.Join(titles, "; ")})
 	}
 
 	if o, err := run(10*time.Second, "/usr/sbin/sysadminctl", "-screenLock", "status"); err == nil || trim(o) != "" {
 		s, v := parseScreenLock(o)
-		add("screenlock", "Блокировка экрана", s, v)
+		add("screenlock", s, v)
 	}
 	if o, err := run(10*time.Second, "/usr/sbin/systemsetup", "-getremotelogin"); err == nil || trim(o) != "" {
 		s, v := parseRemoteLogin(o)
-		add("ssh", "Удалённый вход (SSH)", s, v)
+		add("ssh", s, v)
 	}
 	if o, err := run(10*time.Second, "/usr/bin/profiles", "status", "-type", "enrollment"); err == nil {
-		add("mdm", "Регистрация в MDM", "info", firstLine(trim(o)))
+		add("mdm", "info", firstLine(trim(o)))
 	}
 }

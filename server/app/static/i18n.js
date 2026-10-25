@@ -1,0 +1,210 @@
+// Переводы интерфейса. Ключи общие для обоих языков; недостающий перевод берётся из русского.
+(() => {
+  "use strict";
+  const ru = {
+    "app.name": "HostDeck",
+    "nav.home": "Обзор", "nav.hosts": "Хосты", "nav.audit": "Журнал",
+    "top.theme": "Тема", "top.theme.auto": "Авто", "top.theme.light": "Светлая", "top.theme.dark": "Тёмная",
+    "top.lang": "Язык", "top.logout": "Выйти", "top.menu": "Меню",
+    "login.title": "Вход в HostDeck", "login.sub": "Инвентаризация и состояние вашего парка хостов",
+    "login.name": "Имя пользователя", "login.password": "Пароль", "login.submit": "Войти",
+    "common.cancel": "Отмена", "common.close": "Закрыть", "common.ok": "Понятно", "common.copy": "Копировать",
+    "common.copied": "Скопировано", "common.delete": "Удалить", "common.refresh": "Обновить", "common.search": "Поиск",
+    "common.never": "никогда", "common.now": "только что", "common.error": "Ошибка", "common.back": "К списку хостов",
+    "common.all": "Все", "common.yes": "Да", "common.no": "Нет", "common.loading": "Загрузка…", "common.none": "—",
+
+    "home.title": "Парк ваших хостов — в одном месте",
+    "home.lead": "HostDeck собирает с компьютеров данные об обновлениях, шифровании, защите и нагрузке, показывает их карточками и позволяет выгрузить отчёт в CSV.",
+    "home.cta.hosts": "Открыть список хостов", "home.cta.add": "Добавить хост",
+    "home.stat.hosts": "Хостов", "home.stat.online": "На связи", "home.stat.problems": "С проблемами", "home.stat.warn": "Требуют внимания",
+    "home.how.title": "Как это работает",
+    "home.how.1.t": "Агент на хосте", "home.how.1.d": "Небольшая программа без зависимостей сама подключается к серверу по HTTPS. Входящие порты на хосте не открываются.",
+    "home.how.2.t": "Сервер собирает данные", "home.how.2.d": "Состояние проверяется каждые 15 минут, нагрузка — раз в минуту. Всё хранится в вашей базе SQLite.",
+    "home.how.3.t": "Карточки и отчёты", "home.how.3.d": "Плитки или список, приборы нагрузки, перечень установленного ПО и выгрузка в CSV.",
+    "home.start.title": "Быстрый старт",
+    "home.start.1": "Нажмите «Добавить хост» — сервер выдаст одноразовый токен и готовую команду.",
+    "home.start.2": "На Mac скачайте агент и выполните команду регистрации от имени администратора.",
+    "home.start.3": "Через несколько секунд хост появится в списке, а карточка заполнится данными.",
+    "home.links.title": "Куда дальше",
+    "home.links.hosts": "Парк хостов", "home.links.hosts.d": "Плитки и список, фильтры, массовая выгрузка",
+    "home.links.add": "Подключить хост", "home.links.add.d": "Токен и команда регистрации",
+    "home.links.audit": "Журнал действий", "home.links.audit.d": "Кто и что делал в системе",
+    "home.links.theme": "Оформление", "home.links.theme.d": "Тема и язык переключаются в шапке",
+    "home.legend.title": "Что означают цвета",
+    "home.legend.ok": "Все проверки пройдены", "home.legend.warn": "Есть замечания: обновления, нестандартные настройки", "home.legend.fail": "Защита отключена или не хватает места",
+    "home.legend.unknown": "Данные ещё не получены",
+
+    "status.ok": "В порядке", "status.warn": "Внимание", "status.fail": "Проблема", "status.unknown": "Нет данных", "status.info": "Справка",
+    "status.online": "На связи", "status.offline": "Не в сети",
+    "hosts.title": "Парк хостов", "hosts.search": "Поиск по имени, модели, системе",
+    "hosts.filter": "Состояние", "hosts.filter.all": "Все хосты", "hosts.filter.problems": "С проблемами",
+    "hosts.filter.warn": "Требуют внимания", "hosts.filter.ok": "В порядке", "hosts.filter.offline": "Не в сети",
+    "hosts.sort": "Сортировка", "hosts.sort.name": "По имени", "hosts.sort.status": "По состоянию", "hosts.sort.seen": "По активности",
+    "hosts.view.tiles": "Плитка", "hosts.view.list": "Список",
+    "hosts.selectall": "Выбрать все", "hosts.selected": "Выбрано: {n}",
+    "hosts.export": "Выгрузить CSV", "hosts.export.sel": "Выгрузить выбранные", "hosts.refresh.sel": "Обновить выбранные",
+    "hosts.refresh.queued": "Запрос на обновление отправлен: {n}",
+    "hosts.add": "Добавить хост", "hosts.empty": "Хостов пока нет", "hosts.empty.d": "Добавьте первый хост — это займёт минуту.",
+    "hosts.nomatch": "Ничего не найдено", "hosts.nomatch.d": "Измените поиск или фильтр.",
+    "hosts.col.name": "Хост", "hosts.col.status": "Состояние", "hosts.col.os": "Система", "hosts.col.cpu": "CPU", "hosts.col.mem": "Память",
+    "hosts.col.disk": "Диск", "hosts.col.seen": "Активность", "hosts.col.checks": "Проверки",
+    "card.cpu": "Процессор", "card.mem": "Память", "card.disk": "Диск", "card.checks": "{ok} из {all} в порядке",
+    "card.seen": "Активность: {t}",
+
+    "host.tab.state": "Состояние", "host.tab.software": "ПО", "host.tab.details": "Сведения",
+    "host.refresh": "Обновить данные", "host.refresh.queued": "Запрос отправлен — данные обновятся через несколько секунд",
+    "host.export": "Выгрузить CSV", "host.delete": "Удалить хост",
+    "host.delete.title": "Удалить хост «{name}»?", "host.delete.body": "Хост исчезнет из списка вместе с собранными данными. Агент на нём перестанет подключаться.",
+    "host.deleted": "Хост удалён",
+    "host.gauges": "Приборы", "host.checks": "Проверки безопасности", "host.stale": "Данные устарели",
+    "host.metrics.none": "Метрики ещё не поступали",
+    "host.updated": "Обновлено {t}", "host.uptime": "Работает",
+    "gauge.cpu": "Процессор", "gauge.mem": "Память", "gauge.disk": "Диск", "gauge.battery": "Батарея", "gauge.load": "Нагрузка",
+    "gauge.mem.sub": "{u} из {t} ГБ", "gauge.disk.sub": "свободно {f} ГБ", "gauge.battery.sub.chg": "на питании", "gauge.battery.sub.dis": "от батареи",
+    "gauge.load.sub": "load {v} · {c} ядер", "gauge.swap": "Подкачка",
+    "sw.title": "Установленное ПО", "sw.count": "Записей: {n}", "sw.search": "Поиск по названию", "sw.source": "Источник",
+    "sw.src.all": "Все источники", "sw.src.app": "Приложения", "sw.src.brew": "Homebrew", "sw.src.cask": "Homebrew Cask", "sw.src.pkg": "Пакеты",
+    "sw.col.name": "Название", "sw.col.version": "Версия", "sw.col.source": "Источник", "sw.col.path": "Путь",
+    "sw.refresh": "Запросить список", "sw.updated": "Список получен {t}", "sw.none": "Список ПО ещё не получен",
+    "sw.none.d": "Агент присылает его раз в сутки; можно запросить сейчас.", "sw.queued": "Запрос списка ПО отправлен",
+    "sw.show": "Показано: {n}",
+
+    "info.os": "Система", "info.os_version": "Версия", "info.build": "Сборка", "info.model": "Модель", "info.chip": "Процессор",
+    "info.memory": "Память", "info.arch": "Архитектура", "info.console_user": "Пользователь у экрана", "info.hostname": "Имя хоста",
+    "info.agent": "Версия агента", "info.boot_time": "Время запуска", "info.created": "Идентификатор", "info.seen": "Последняя связь",
+
+    "check.filevault": "Шифрование диска (FileVault)", "check.sip": "SIP (защита системы)", "check.gatekeeper": "Gatekeeper",
+    "check.firewall": "Брандмауэр", "check.stealth": "Режим невидимки", "check.auto_check": "Автопроверка обновлений",
+    "check.auto_critical": "Автоустановка обновлений безопасности", "check.updates": "Обновления macOS", "check.screenlock": "Блокировка экрана",
+    "check.ssh": "Удалённый вход (SSH)", "check.mdm": "Регистрация в MDM", "check.disk": "Свободное место на диске", "check.platform": "Платформа",
+    "val.on": "Включено", "val.off": "Выключено", "val.in_progress": "Идёт шифрование/расшифровка", "val.custom": "Нестандартная конфигурация",
+    "val.immediate": "Сразу", "val.after": "Через {n} с", "val.unset": "Не задано", "val.none": "Обновлений нет", "val.available": "Доступно: {n}",
+    "val.running": "Проверка выполняется", "val.failed": "Не удалось получить список", "val.used": "Занято {n}%",
+    "val.mac_only": "Проверки безопасности реализованы только для macOS", "val.checked": "проверено {t}", "val.free": "свободно {n} ГБ",
+
+    "add.title": "Добавить хост", "add.name": "Название (необязательно)", "add.os": "Система", "add.os.mac": "macOS (Apple Silicon)", "add.os.macintel": "macOS (Intel)", "add.os.linux": "Linux (x86-64)",
+    "add.create": "Создать токен", "add.token.hint": "Токен действует 24 часа и подходит для одного хоста.",
+    "add.cmd.title": "Выполните на хосте", "add.cmd.note": "Скачайте агент с этой страницы или из папки dist/ проекта, затем выполните команду от имени администратора.",
+    "add.token.label": "Токен", "audit.title": "Журнал действий", "audit.empty": "Записей пока нет",
+    "audit.col.time": "Время", "audit.col.actor": "Кто", "audit.col.host": "Хост", "audit.col.action": "Действие", "audit.col.detail": "Подробности",
+
+    "csv.section": "Раздел", "csv.key": "Параметр", "csv.value": "Значение", "csv.status": "Состояние / источник", "csv.detail": "Подробности",
+    "csv.sec.host": "хост", "csv.sec.check": "проверка", "csv.sec.software": "ПО",
+    "csv.exported": "Файл сохранён: {f}",
+    "err.generic": "Что-то пошло не так: {m}", "err.network": "Нет связи с сервером",
+  };
+
+  const en = {
+    "nav.home": "Overview", "nav.hosts": "Hosts", "nav.audit": "Audit log",
+    "top.theme": "Theme", "top.theme.auto": "Auto", "top.theme.light": "Light", "top.theme.dark": "Dark",
+    "top.lang": "Language", "top.logout": "Sign out", "top.menu": "Menu",
+    "login.title": "Sign in to HostDeck", "login.sub": "Inventory and health of your hosts",
+    "login.name": "Username", "login.password": "Password", "login.submit": "Sign in",
+    "common.cancel": "Cancel", "common.close": "Close", "common.ok": "Got it", "common.copy": "Copy",
+    "common.copied": "Copied", "common.delete": "Delete", "common.refresh": "Refresh", "common.search": "Search",
+    "common.never": "never", "common.now": "just now", "common.error": "Error", "common.back": "Back to hosts",
+    "common.all": "All", "common.yes": "Yes", "common.no": "No", "common.loading": "Loading…", "common.none": "—",
+
+    "home.title": "All your hosts in one place",
+    "home.lead": "HostDeck collects updates, encryption, protection and load data from your computers, shows it as cards and exports reports to CSV.",
+    "home.cta.hosts": "Open hosts", "home.cta.add": "Add a host",
+    "home.stat.hosts": "Hosts", "home.stat.online": "Online", "home.stat.problems": "With problems", "home.stat.warn": "Need attention",
+    "home.how.title": "How it works",
+    "home.how.1.t": "An agent on the host", "home.how.1.d": "A small dependency-free program connects to the server over HTTPS by itself. No inbound ports are opened on the host.",
+    "home.how.2.t": "The server collects data", "home.how.2.d": "Posture is checked every 15 minutes, load every minute. Everything is kept in your own SQLite database.",
+    "home.how.3.t": "Cards and reports", "home.how.3.d": "Tiles or a list, load gauges, the installed software inventory and CSV export.",
+    "home.start.title": "Quick start",
+    "home.start.1": "Press “Add a host” — the server issues a one-time token and a ready-made command.",
+    "home.start.2": "On the Mac, download the agent and run the enrollment command as an administrator.",
+    "home.start.3": "A few seconds later the host appears in the list and its card fills with data.",
+    "home.links.title": "Where next",
+    "home.links.hosts": "Hosts", "home.links.hosts.d": "Tiles and list, filters, bulk export",
+    "home.links.add": "Connect a host", "home.links.add.d": "Token and enrollment command",
+    "home.links.audit": "Audit log", "home.links.audit.d": "Who did what in the system",
+    "home.links.theme": "Appearance", "home.links.theme.d": "Theme and language are in the header",
+    "home.legend.title": "What the colours mean",
+    "home.legend.ok": "All checks passed", "home.legend.warn": "Notes: updates, non-default settings", "home.legend.fail": "Protection is off or disk is almost full",
+    "home.legend.unknown": "No data received yet",
+
+    "status.ok": "Healthy", "status.warn": "Attention", "status.fail": "Problem", "status.unknown": "No data", "status.info": "Info",
+    "status.online": "Online", "status.offline": "Offline",
+    "hosts.title": "Hosts", "hosts.search": "Search by name, model, system",
+    "hosts.filter": "State", "hosts.filter.all": "All hosts", "hosts.filter.problems": "With problems",
+    "hosts.filter.warn": "Need attention", "hosts.filter.ok": "Healthy", "hosts.filter.offline": "Offline",
+    "hosts.sort": "Sort", "hosts.sort.name": "By name", "hosts.sort.status": "By state", "hosts.sort.seen": "By activity",
+    "hosts.view.tiles": "Tiles", "hosts.view.list": "List",
+    "hosts.selectall": "Select all", "hosts.selected": "Selected: {n}",
+    "hosts.export": "Export CSV", "hosts.export.sel": "Export selected", "hosts.refresh.sel": "Refresh selected",
+    "hosts.refresh.queued": "Refresh requested: {n}",
+    "hosts.add": "Add a host", "hosts.empty": "No hosts yet", "hosts.empty.d": "Add your first host — it takes a minute.",
+    "hosts.nomatch": "Nothing found", "hosts.nomatch.d": "Change the search or the filter.",
+    "hosts.col.name": "Host", "hosts.col.status": "State", "hosts.col.os": "System", "hosts.col.cpu": "CPU", "hosts.col.mem": "Memory",
+    "hosts.col.disk": "Disk", "hosts.col.seen": "Activity", "hosts.col.checks": "Checks",
+    "card.cpu": "CPU", "card.mem": "Memory", "card.disk": "Disk", "card.checks": "{ok} of {all} healthy",
+    "card.seen": "Seen: {t}",
+
+    "host.tab.state": "State", "host.tab.software": "Software", "host.tab.details": "Details",
+    "host.refresh": "Refresh data", "host.refresh.queued": "Request sent — data will update in a few seconds",
+    "host.export": "Export CSV", "host.delete": "Delete host",
+    "host.delete.title": "Delete host “{name}”?", "host.delete.body": "The host will disappear from the list together with its collected data. The agent will stop connecting.",
+    "host.deleted": "Host deleted",
+    "host.gauges": "Gauges", "host.checks": "Security checks", "host.stale": "Data is stale",
+    "host.metrics.none": "No metrics received yet",
+    "host.updated": "Updated {t}", "host.uptime": "Uptime",
+    "gauge.cpu": "CPU", "gauge.mem": "Memory", "gauge.disk": "Disk", "gauge.battery": "Battery", "gauge.load": "Load",
+    "gauge.mem.sub": "{u} of {t} GB", "gauge.disk.sub": "{f} GB free", "gauge.battery.sub.chg": "plugged in", "gauge.battery.sub.dis": "on battery",
+    "gauge.load.sub": "load {v} · {c} cores", "gauge.swap": "Swap",
+    "sw.title": "Installed software", "sw.count": "Items: {n}", "sw.search": "Search by name", "sw.source": "Source",
+    "sw.src.all": "All sources", "sw.src.app": "Applications", "sw.src.brew": "Homebrew", "sw.src.cask": "Homebrew Cask", "sw.src.pkg": "Packages",
+    "sw.col.name": "Name", "sw.col.version": "Version", "sw.col.source": "Source", "sw.col.path": "Path",
+    "sw.refresh": "Request list", "sw.updated": "List received {t}", "sw.none": "Software list not received yet",
+    "sw.none.d": "The agent sends it once a day; you can request it now.", "sw.queued": "Software list requested",
+    "sw.show": "Shown: {n}",
+
+    "info.os": "System", "info.os_version": "Version", "info.build": "Build", "info.model": "Model", "info.chip": "Processor",
+    "info.memory": "Memory", "info.arch": "Architecture", "info.console_user": "User at the console", "info.hostname": "Hostname",
+    "info.agent": "Agent version", "info.boot_time": "Boot time", "info.created": "Identifier", "info.seen": "Last contact",
+
+    "check.filevault": "Disk encryption (FileVault)", "check.sip": "SIP (system integrity)", "check.gatekeeper": "Gatekeeper",
+    "check.firewall": "Firewall", "check.stealth": "Stealth mode", "check.auto_check": "Automatic update check",
+    "check.auto_critical": "Automatic security updates", "check.updates": "macOS updates", "check.screenlock": "Screen lock",
+    "check.ssh": "Remote login (SSH)", "check.mdm": "MDM enrollment", "check.disk": "Free disk space", "check.platform": "Platform",
+    "val.on": "On", "val.off": "Off", "val.in_progress": "Encryption/decryption in progress", "val.custom": "Custom configuration",
+    "val.immediate": "Immediately", "val.after": "After {n} s", "val.unset": "Not set", "val.none": "Up to date", "val.available": "Available: {n}",
+    "val.running": "Check in progress", "val.failed": "Could not get the list", "val.used": "{n}% used",
+    "val.mac_only": "Security checks are implemented for macOS only", "val.checked": "checked {t}", "val.free": "{n} GB free",
+
+    "add.title": "Add a host", "add.name": "Name (optional)", "add.os": "System", "add.os.mac": "macOS (Apple Silicon)", "add.os.macintel": "macOS (Intel)", "add.os.linux": "Linux (x86-64)",
+    "add.create": "Create token", "add.token.hint": "The token is valid for 24 hours and works for one host.",
+    "add.cmd.title": "Run on the host", "add.cmd.note": "Download the agent from this page or from the project's dist/ folder, then run the command as an administrator.",
+    "add.token.label": "Token", "audit.title": "Audit log", "audit.empty": "No entries yet",
+    "audit.col.time": "Time", "audit.col.actor": "Who", "audit.col.host": "Host", "audit.col.action": "Action", "audit.col.detail": "Details",
+
+    "csv.section": "Section", "csv.key": "Parameter", "csv.value": "Value", "csv.status": "State / source", "csv.detail": "Details",
+    "csv.sec.host": "host", "csv.sec.check": "check", "csv.sec.software": "software",
+    "csv.exported": "File saved: {f}",
+    "err.generic": "Something went wrong: {m}", "err.network": "Cannot reach the server",
+  };
+
+  const dicts = { ru, en };
+  let lang = "ru";
+  try {
+    const saved = localStorage.getItem("hd_lang");
+    if (saved === "ru" || saved === "en") lang = saved;
+    else lang = (navigator.language || "ru").toLowerCase().startsWith("ru") ? "ru" : "en";
+  } catch (_) { /* хранилище недоступно */ }
+
+  function t(key, params) {
+    let s = (dicts[lang] && dicts[lang][key]) || ru[key] || key;
+    if (params) for (const [k, v] of Object.entries(params)) s = s.split("{" + k + "}").join(String(v));
+    return s;
+  }
+  function setLang(l) {
+    if (!dicts[l]) return;
+    lang = l;
+    try { localStorage.setItem("hd_lang", l); } catch (_) { /* не критично */ }
+    document.documentElement.lang = l;
+  }
+  document.documentElement.lang = lang;
+  window.I18N = { t, setLang, get lang() { return lang; }, has: (k) => !!(dicts[lang] && dicts[lang][k]) || !!ru[k] };
+})();

@@ -116,11 +116,14 @@ async def logout(request: Request):
 async def me(request: Request):
     u = current_user(request)
     if not u:
-        return err("требуется вход", 401)
+        return JSONResponse(None)  # не 401: иначе консоль браузера засоряется ошибкой на странице входа
     return JSONResponse({"name": u["name"], "role": u["role"]})
 
 
 # --- хосты ---------------------------------------------------------------
+# список ПО в сводку не тянем: считаем записи на стороне SQLite
+HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,metrics,metrics_at,software_at,"
+               "CASE WHEN software IS NULL THEN NULL ELSE json_array_length(software) END AS software_count FROM hosts")
 RANK = {"fail": 3, "warn": 2, "unknown": 1, "ok": 0, "info": 0}
 
 
@@ -143,6 +146,10 @@ def summarize(row, detail=False):
         "online": online, "last_seen": row["last_seen"], "posture_at": row["posture_at"],
         "status": worst, "counts": counts,
         "info": (posture or {}).get("info", {}),
+        "metrics": json.loads(row["metrics"]) if row["metrics"] else None,
+        "metrics_at": row["metrics_at"],
+        "software_at": row["software_at"],
+        "software_count": row["software_count"],
     }
     if detail:
         out["checks"] = (posture or {}).get("checks", [])
@@ -153,7 +160,7 @@ async def hosts_list(request: Request):
     u, e = need(request, "viewer")
     if e:
         return e
-    rows = db.q("SELECT * FROM hosts ORDER BY name COLLATE NOCASE")
+    rows = db.q(HOST_SELECT + " ORDER BY name COLLATE NOCASE")
     return JSONResponse([summarize(r) for r in rows])
 
 
@@ -161,7 +168,7 @@ async def host_detail(request: Request):
     u, e = need(request, "viewer")
     if e:
         return e
-    row = db.q1("SELECT * FROM hosts WHERE id=?", (request.path_params["id"],))
+    row = db.q1(HOST_SELECT + " WHERE id=?", (request.path_params["id"],))
     if not row:
         return err("хост не найден", 404)
     return JSONResponse(summarize(row, detail=True))
@@ -176,6 +183,29 @@ async def host_refresh(request: Request):
         return err("хост не найден", 404)
     await queue_for(hid).put({"id": secrets.token_hex(4), "type": "collect"})
     db.audit(u["name"], "refresh", host=hid)
+    return JSONResponse({"queued": True})
+
+
+async def host_software(request: Request):
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    row = db.q1("SELECT software, software_at FROM hosts WHERE id=?", (request.path_params["id"],))
+    if not row:
+        return err("хост не найден", 404)
+    items = json.loads(row["software"]) if row["software"] else []
+    return JSONResponse({"at": row["software_at"], "items": items})
+
+
+async def host_software_refresh(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    await queue_for(hid).put({"id": secrets.token_hex(4), "type": "software"})
+    db.audit(u["name"], "software-refresh", host=hid)
     return JSONResponse({"queued": True})
 
 
@@ -281,6 +311,24 @@ async def agent_report(request: Request):
         db.x("UPDATE hosts SET posture=?, posture_at=?, last_seen=?, agent_version=COALESCE(?,agent_version), os=COALESCE(?,os) WHERE id=?",
              (json.dumps(d, ensure_ascii=False), now, now, data.get("version"), data.get("os"), host["id"]))
         return JSONResponse({"ok": True})
+    if kind == "metrics":
+        d = data.get("data")
+        if not isinstance(d, dict) or len(json.dumps(d)) > 4_000:
+            return err("некорректные данные")
+        db.x("UPDATE hosts SET metrics=?, metrics_at=?, last_seen=? WHERE id=?", (json.dumps(d), now, now, host["id"]))
+        return JSONResponse({"ok": True})
+    if kind == "software":
+        d = data.get("data")
+        if not isinstance(d, list) or len(d) > 20_000:
+            return err("некорректные данные")
+        clean = []
+        for it in d:
+            if isinstance(it, dict) and isinstance(it.get("n"), str):
+                clean.append({"n": it["n"][:200], "v": str(it.get("v", ""))[:100],
+                              "s": str(it.get("s", ""))[:20], "p": str(it.get("p", ""))[:300]})
+        db.x("UPDATE hosts SET software=?, software_at=?, last_seen=? WHERE id=?",
+             (json.dumps(clean, ensure_ascii=False), now, now, host["id"]))
+        return JSONResponse({"ok": True, "count": len(clean)})
     return err("неизвестный тип отчёта")
 
 
@@ -318,6 +366,8 @@ app = Starlette(
         Route("/api/hosts", hosts_list),
         Route("/api/hosts/{id}", host_detail),
         Route("/api/hosts/{id}/refresh", host_refresh, methods=["POST"]),
+        Route("/api/hosts/{id}/software", host_software),
+        Route("/api/hosts/{id}/software/refresh", host_software_refresh, methods=["POST"]),
         Route("/api/hosts/{id}", host_delete, methods=["DELETE"]),
         Route("/api/enroll-tokens", token_create, methods=["POST"]),
         Route("/api/audit", audit_list),

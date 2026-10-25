@@ -70,3 +70,27 @@ func TestBootAndDefaults(t *testing.T) {
 		t.Errorf("defaults missing must be unset")
 	}
 }
+
+func TestMetricParsers(t *testing.T) {
+	top := "CPU usage: 50.0% user, 10.0% sys, 40.0% idle\nCPU usage: 8.5% user, 3.5% sys, 88.0% idle\n"
+	if v, ok := parseTopCPU(top); !ok || v < 11.9 || v > 12.1 {
+		t.Errorf("cpu: %v %v", v, ok)
+	}
+	vm := "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 100.\nPages active: 1000.\nPages wired down: 500.\nPages occupied by compressor: 100.\n"
+	if u, ok := parseVMStat(vm); !ok || u != 1600*16384 {
+		t.Errorf("vm: %v %v", u, ok)
+	}
+	if p, _, ok := parseSwap("vm.swapusage: total = 2048.00M  used = 512.00M  free = 1536.00M  (encrypted)"); !ok || p != 25 {
+		t.Errorf("swap: %v", p)
+	}
+	batt := "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t87%; discharging; 5:12 remaining present: true"
+	if p, chrg, ok := parseBattery(batt); !ok || p != 87 || chrg {
+		t.Errorf("batt: %v %v %v", p, chrg, ok)
+	}
+	if _, _, ok := parseBattery("Now drawing from 'AC Power'"); ok {
+		t.Error("battery must be absent")
+	}
+	if v, ok := parseLoadAvg("{ 1.52 1.60 1.71 }"); !ok || v != 1.52 {
+		t.Errorf("load: %v", v)
+	}
+}

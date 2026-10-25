@@ -36,6 +36,10 @@ def conn():
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.executescript(SCHEMA)
+            cols = {r[1] for r in _conn.execute("PRAGMA table_info(hosts)")}
+            for col, typ in (("metrics", "TEXT"), ("metrics_at", "REAL")):  # миграция баз этапа 1
+                if col not in cols:
+                    _conn.execute(f"ALTER TABLE hosts ADD COLUMN {col} {typ}")
         return _conn
 
 

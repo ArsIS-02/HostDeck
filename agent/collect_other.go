@@ -4,7 +4,9 @@ package main
 
 import (
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // platformCollect на не-macOS хостах: минимальный набор (нужен для проверки всей цепочки вне Mac).
@@ -23,8 +25,8 @@ func platformCollect(p *Posture) {
 	if b, err := os.ReadFile("/proc/uptime"); err == nil {
 		var up float64
 		if _, err := fmtSscan(string(b), &up); err == nil {
-			p.Info["uptime"] = fmtDuration(int64(up))
+			p.Info["boot_time"] = strconv.FormatInt(time.Now().Unix()-int64(up), 10)
 		}
 	}
-	p.Checks = append(p.Checks, Check{ID: "platform", Label: "Платформа", Status: "info", Value: "проверки безопасности реализованы только для macOS"})
+	p.Checks = append(p.Checks, Check{ID: "platform", Status: "info", Value: "mac_only"})
 }

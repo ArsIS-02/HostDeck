@@ -32,7 +32,11 @@ func main() {
 	case "version":
 		fmt.Println(version)
 	case "collect":
-		b, _ := json.MarshalIndent(collect(), "", "  ")
+		out := map[string]any{"posture": collect(), "metrics": collectMetrics()}
+		if len(os.Args) > 2 && os.Args[2] == "-software" {
+			out["software"] = collectSoftware()
+		}
+		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
 	case "enroll":
 		cmdEnroll(os.Args[2:])
@@ -107,6 +111,40 @@ func cmdRun(args []string) {
 		}
 		log.Printf("состояние отправлено (%d проверок)", len(p.Checks))
 	}
+	sendSoftware := func() {
+		items := collectSoftware()
+		if err := c.reportSoftware(ctx, items); err != nil {
+			log.Printf("отправка списка ПО: %v", err)
+			return
+		}
+		log.Printf("список ПО отправлен (%d)", len(items))
+	}
+	go func() { // метрики для приборов — раз в минуту
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			if err := c.reportMetrics(ctx, collectMetrics()); err != nil && ctx.Err() == nil {
+				log.Printf("отправка метрик: %v", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+	go func() { // список ПО — раз в сутки и по запросу
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for {
+			sendSoftware()
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
 	go func() {
 		send()
 		t := time.NewTicker(time.Duration(cfg.IntervalMin) * time.Minute)
@@ -146,6 +184,8 @@ func cmdRun(args []string) {
 			switch cmd.Type {
 			case "collect":
 				go send()
+			case "software":
+				go sendSoftware()
 			default:
 				log.Printf("неизвестная команда %q", cmd.Type)
 			}
