@@ -44,9 +44,8 @@ location / {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_read_timeout 60s;
-    proxy_buffering off;           # поток вывода консоли (SSE) не должен буферизоваться
-    # для /api/term/ можно поднять proxy_read_timeout до 1h: поток держится открытым        # длинный опрос агентов идёт до 25 секунд
+    proxy_read_timeout 1h;         # поток вывода консоли (SSE) держится открытым; длинный опрос агентов идёт до 25 секунд
+    proxy_buffering off;           # SSE не должен буферизоваться
 }
 ```
 
