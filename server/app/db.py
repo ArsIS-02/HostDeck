@@ -36,6 +36,9 @@ def conn():
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.executescript(SCHEMA)
+            acols = {r[1] for r in _conn.execute("PRAGMA table_info(audit)")}
+            if "host_name" not in acols:  # имя хоста хранится в записи журнала, чтобы после удаления хоста история оставалась читаемой
+                _conn.execute("ALTER TABLE audit ADD COLUMN host_name TEXT")
             cols = {r[1] for r in _conn.execute("PRAGMA table_info(hosts)")}
             for col, typ in (("metrics", "TEXT"), ("metrics_at", "REAL")):  # миграция баз этапа 1
                 if col not in cols:
@@ -86,9 +89,12 @@ def check_password(pw: str, stored: str) -> bool:
         return False
 
 
-def audit(actor, action, host=None, detail=None):
-    x("INSERT INTO audit(ts,actor,host,action,detail) VALUES(?,?,?,?,?)",
-      (time.time(), actor, host, action, detail))
+def audit(actor, action, host=None, detail=None, host_name=None):
+    if host and not host_name:
+        row = q1("SELECT name FROM hosts WHERE id=?", (host,))
+        host_name = row["name"] if row else None
+    x("INSERT INTO audit(ts,actor,host,host_name,action,detail) VALUES(?,?,?,?,?,?)",
+      (time.time(), actor, host, host_name, action, detail))
 
 
 def ensure_admin():

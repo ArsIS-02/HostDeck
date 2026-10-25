@@ -435,15 +435,54 @@ async def host_software_refresh(request: Request):
     return JSONResponse({"queued": True})
 
 
+async def close_host_terms(hid):
+    """Закрывает открытые консольные сессии хоста (его агент после удаления всё равно перестанет подключаться)."""
+    for t in [t for t in terms.values() if t.host_id == hid and not t.closed]:
+        try:
+            await t.finish(error="хост удалён")
+        except Exception:  # noqa: BLE001 — удаление хоста важнее аккуратного закрытия сессии
+            pass
+
+
+async def delete_hosts(user, ids):
+    """Удаляет хосты из базы вместе со всеми собранными данными (состояние, ПО, метрики, ключ агента). Возвращает число удалённых."""
+    n = 0
+    for hid in ids:
+        row = db.q1("SELECT id,name FROM hosts WHERE id=?", (hid,))
+        if not row:
+            continue
+        await close_host_terms(hid)
+        db.audit(user["name"], "host-deleted", host=hid, host_name=row["name"])
+        db.x("DELETE FROM hosts WHERE id=?", (hid,))
+        queues.pop(hid, None)
+        n += 1
+    return n
+
+
 async def host_delete(request: Request):
     u, e = need(request, "admin")
     if e:
         return e
     hid = request.path_params["id"]
-    db.x("DELETE FROM hosts WHERE id=?", (hid,))
-    queues.pop(hid, None)
-    db.audit(u["name"], "host-deleted", host=hid)
-    return JSONResponse({"ok": True})
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    n = await delete_hosts(u, [hid])
+    return JSONResponse({"ok": True, "deleted": n})
+
+
+async def hosts_delete_many(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids or len(ids) > 200 or not all(isinstance(i, str) for i in ids):
+        return err("нужен список идентификаторов хостов (до 200)")
+    n = await delete_hosts(u, list(dict.fromkeys(ids)))
+    return JSONResponse({"ok": True, "deleted": n})
 
 
 async def token_create(request: Request):
@@ -468,8 +507,13 @@ async def audit_list(request: Request):
     u, e = need(request, "admin")
     if e:
         return e
-    rows = db.q("SELECT ts,actor,host,action,detail FROM audit ORDER BY id DESC LIMIT 200")
-    return JSONResponse([dict(r) for r in rows])
+    try:
+        limit = max(1, min(1000, int(request.query_params.get("limit", 200))))
+    except ValueError:
+        limit = 200
+    rows = db.q("SELECT a.id,a.ts,a.actor,a.host,COALESCE(a.host_name,h.name) AS host_name,a.action,a.detail "
+                "FROM audit a LEFT JOIN hosts h ON h.id=a.host ORDER BY a.id DESC LIMIT ?", (limit + 1,))
+    return JSONResponse({"rows": [dict(r) for r in rows[:limit]], "more": len(rows) > limit})
 
 
 # --- агент ---------------------------------------------------------------
@@ -678,6 +722,7 @@ app = Starlette(
         Route("/api/hosts/{id}", host_delete, methods=["DELETE"]),
         Route("/api/enroll-tokens", token_create, methods=["POST"]),
         Route("/api/audit", audit_list),
+        Route("/api/hosts/delete", hosts_delete_many, methods=["POST"]),
         Route("/api/os-logos", os_logos),
         Route("/install.sh", install_script),
         Route("/dl/{name}", download),

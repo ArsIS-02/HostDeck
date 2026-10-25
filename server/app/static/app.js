@@ -308,7 +308,8 @@
       el("div", { class: "bars" },
         progress(x.cpu, { label: T("card.cpu"), text: pct(x.cpu) }), progress(x.mem, { label: T("card.mem"), text: pct(x.mem) }), progress(x.disk, { label: T("card.disk"), text: pct(x.disk) })),
       el("div", { class: "hc-foot muted small" }, el("span", {}, icon("clock", 14), " ", T("card.seen", { t: ago(h.last_seen) })),
-        el("span", {}, T("card.checks", { ok: h.counts.ok, all: h.counts.ok + h.counts.warn + h.counts.fail + h.counts.unknown }))));
+        el("span", {}, T("card.checks", { ok: h.counts.ok, all: h.counts.ok + h.counts.warn + h.counts.fail + h.counts.unknown })),
+        me.role === "admin" ? button("", { icon: "trash", kind: "danger-ghost", title: T("host.delete"), onclick: (e) => { e.stopPropagation(); deleteHosts([h]); } }) : null));
     return card;
   }
 
@@ -329,13 +330,31 @@
         el("td", { class: "hide-s" }, progress(pct(x.cpu), { text: x.cpu == null ? "—" : Math.round(x.cpu) + "%" })),
         el("td", { class: "hide-s" }, progress(pct(x.mem), { text: x.mem == null ? "—" : Math.round(x.mem) + "%" })),
         el("td", { class: "hide-s" }, progress(pct(x.disk), { text: x.disk == null ? "—" : Math.round(x.disk) + "%" })),
-        el("td", { class: "muted small nowrap" }, el("span", { class: "dot " + (h.online ? "on" : "off") }), ago(h.last_seen)));
+        el("td", { class: "muted small nowrap" }, el("span", { class: "dot " + (h.online ? "on" : "off") }), ago(h.last_seen)),
+        me.role === "admin" ? el("td", { class: "c-act" }, button("", { icon: "trash", kind: "danger-ghost", title: T("host.delete"), onclick: (e) => { e.stopPropagation(); deleteHosts([h]); } })) : null);
       return tr;
     });
     return el("div", { class: "card table-card" }, el("table", { class: "tbl" },
       el("thead", {}, el("tr", {}, el("th", { class: "c-cb" }, all), el("th", {}, T("hosts.col.name")), el("th", {}, T("hosts.col.status")), el("th", { class: "hide-m" }, T("hosts.col.os")),
-        el("th", { class: "hide-s" }, T("hosts.col.cpu")), el("th", { class: "hide-s" }, T("hosts.col.mem")), el("th", { class: "hide-s" }, T("hosts.col.disk")), el("th", {}, T("hosts.col.seen")))),
+        el("th", { class: "hide-s" }, T("hosts.col.cpu")), el("th", { class: "hide-s" }, T("hosts.col.mem")), el("th", { class: "hide-s" }, T("hosts.col.disk")), el("th", {}, T("hosts.col.seen")), me.role === "admin" ? el("th", { class: "c-act" }) : null)),
       el("tbody", {}, rows)));
+  }
+
+  // --- удаление хостов (из списка, плиток и панели выбранных) ---------------------------------------------------------------------------
+  async function deleteHosts(list) {
+    if (!list.length) return;
+    const names = list.slice(0, 8).map((h) => el("li", {}, h.name));
+    const body = el("div", {}, list.length > 1 ? el("ul", { class: "del-list" }, names, list.length > 8 ? el("li", { class: "muted" }, "…") : null) : null, el("p", {}, T("hosts.delete.body")));
+    const yes = await dialog({ title: list.length === 1 ? T("hosts.delete.one", { name: list[0].name }) : T("hosts.delete.title", { n: list.length }), icon: "trash", tone: "danger", body,
+      buttons: [{ text: T("common.cancel"), value: false }, { text: T("common.delete"), value: true, kind: "danger" }] });
+    if (yes !== true) return;
+    try {
+      const r = await api("/api/hosts/delete", { method: "POST", body: { ids: list.map((h) => h.id) } });
+      list.forEach((h) => selected.delete(h.id));
+      toast(T("hosts.deleted", { n: r.deleted }));
+      await refreshHosts();
+      drawHosts();
+    } catch (e) { fail(e); }
   }
 
   let hostsBox = null, bulkBox = null;
@@ -345,6 +364,7 @@
     bulkBox.replaceChildren(...(n > 0 ? [el("div", { class: "bulk" }, el("span", { class: "bulk-n" }, T("hosts.selected", { n })),
       me.role !== "viewer" ? button(T("hosts.refresh.sel"), { icon: "refresh", onclick: bulkRefresh }) : null,
       button(T("hosts.export.sel"), { icon: "download", onclick: () => exportFleet(hosts.filter((h) => selected.has(h.id))) }),
+      me.role === "admin" ? button(T("hosts.delete.sel"), { icon: "trash", kind: "danger-ghost", onclick: () => deleteHosts(hosts.filter((h) => selected.has(h.id))) }) : null,
       button("", { icon: "x", kind: "ghost", title: T("common.cancel"), onclick: () => { selected.clear(); drawHosts(); } }))] : []));
   }
   async function bulkRefresh() {
@@ -681,16 +701,89 @@
   }
 
   // --- журнал --------------------------------------------------------------------------------------------------------------------------------
+  // --- журнал действий: лента понятных событий -------------------------------------------------------------------------------------------
+  const AUDIT = {
+    "login": { ic: "key", tone: "info", cat: "access" }, "login-failed": { ic: "alert", tone: "warn", cat: "access" },
+    "refresh": { ic: "refresh", tone: "", cat: "requests" }, "software-refresh": { ic: "apps", tone: "", cat: "requests" },
+    "term-open": { ic: "terminal", tone: "warn", cat: "console" }, "term-closed": { ic: "terminal", tone: "", cat: "console" }, "term-denied": { ic: "x", tone: "fail", cat: "console" },
+    "host-deleted": { ic: "trash", tone: "fail", cat: "hosts" }, "enroll-token-created": { ic: "plus", tone: "info", cat: "hosts" },
+    "enroll-rejected": { ic: "x", tone: "fail", cat: "hosts" }, "enrolled": { ic: "check", tone: "ok", cat: "hosts" },
+    "admin-created": { ic: "key", tone: "info", cat: "access" },
+  };
+  function fmtDur(sec) {
+    if (sec < 60) return `${sec} ${T("u.s")}`;
+    if (sec < 3600) return `${Math.floor(sec / 60)} ${T("u.min")} ${sec % 60} ${T("u.s")}`;
+    return `${Math.floor(sec / 3600)} ${T("u.h")} ${Math.floor((sec % 3600) / 60)} ${T("u.min")}`;
+  }
+  function fmtBytes(n) {
+    if (n < 1024) return `${n} ${T("u.b")}`;
+    if (n < 1048576) return `${(n / 1024).toFixed(1)} ${T("u.kb")}`;
+    return `${(n / 1048576).toFixed(1)} ${T("u.mb")}`;
+  }
+  function auditActor(r) { return r.actor === "agent" ? T("audit.actor.agent") : r.actor === "system" ? T("audit.actor.system") : r.actor || "—"; }
+  function auditDetail(r) {
+    const d = r.detail || "";
+    switch (r.action) {
+      case "login": case "term-open": case "enroll-rejected": return d ? T("audit.d.from", { ip: d }) : "";
+      case "login-failed": return [r.actor ? T("audit.d.tried", { name: r.actor }) : "", d ? T("audit.d.from", { ip: d }) : ""].filter(Boolean).join(", ");
+      case "term-denied": return d.includes("не разрешена") ? T("audit.d.term_off") : d;
+      case "term-closed": {
+        const m = d.match(/^(\d+) с, ввод (\d+) Б, вывод (\d+) Б(?:, ошибка: (.*))?$/);
+        if (!m) return d;
+        return T("audit.d.session", { t: fmtDur(+m[1]), i: fmtBytes(+m[2]), o: fmtBytes(+m[3]) }) + (m[4] ? ", " + T("audit.d.error", { e: m[4] }) : "");
+      }
+      case "enrolled": return "";
+      case "admin-created": return d ? T("audit.d.name", { n: d }) : "";
+      case "enroll-token-created": return d ? T("audit.d.label", { n: d }) : "";
+      default: return d;
+    }
+  }
+  function dayLabel(ts) {
+    const d = new Date(ts * 1000), n = new Date();
+    const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((day(n) - day(d)) / 86400000);
+    if (diff === 0) return T("audit.today");
+    if (diff === 1) return T("audit.yesterday");
+    return d.toLocaleDateString(loc(), { weekday: "long", day: "numeric", month: "long", year: d.getFullYear() === n.getFullYear() ? undefined : "numeric" });
+  }
   function auditView() {
-    const box = el("div", {});
-    const page = el("main", { class: "page" }, el("div", { class: "page-head" }, el("h1", {}, T("audit.title"))), box);
-    api("/api/audit").then((rows) => {
-      if (!rows.length) { box.replaceChildren(el("p", { class: "muted" }, T("audit.empty"))); return; }
-      const nm = (id) => { const h = hosts.find((x) => x.id === id); return h ? h.name : id || ""; };
-      box.replaceChildren(el("div", { class: "card table-card" }, el("table", { class: "tbl" },
-        el("thead", {}, el("tr", {}, ["time", "actor", "host", "action", "detail"].map((k) => el("th", {}, T("audit.col." + k))))),
-        el("tbody", {}, rows.map((r) => el("tr", {}, el("td", { class: "nowrap muted small" }, fmtDate(r.ts)), el("td", {}, r.actor), el("td", {}, nm(r.host)), el("td", {}, r.action), el("td", { class: "muted small" }, r.detail || "")))))));
-    }).catch(fail);
+    const st = { cat: "all", q: "", limit: 200, rows: [], more: false };
+    const list = el("div", {});
+    const search = el("input", { class: "input search", type: "search", placeholder: T("audit.search"), "aria-label": T("audit.search") });
+    const draw = () => {
+      const q = st.q.trim().toLowerCase();
+      const rows = st.rows.filter((r) => {
+        const a = AUDIT[r.action];
+        if (st.cat !== "all" && (!a || a.cat !== st.cat)) return false;
+        if (!q) return true;
+        return `${T("audit.act." + r.action)} ${auditActor(r)} ${r.host_name || ""} ${auditDetail(r)}`.toLowerCase().includes(q);
+      });
+      if (!rows.length) { list.replaceChildren(el("div", { class: "empty" }, icon("book", 36), el("p", { class: "muted" }, st.rows.length ? T("audit.none") : T("audit.empty")))); return; }
+      const out = []; let last = null, group = null;
+      for (const r of rows) {
+        const lbl = dayLabel(r.ts);
+        if (lbl !== last) { last = lbl; out.push(el("h3", { class: "log-day" }, lbl)); group = el("div", { class: "card log-card" }); out.push(group); }
+        const a = AUDIT[r.action] || { ic: "info", tone: "" };
+        const det = auditDetail(r);
+        const sub = [T("audit.by", { who: auditActor(r) }), det].filter(Boolean).join(" · ");
+        group.append(el("div", { class: "log-row" },
+          el("span", { class: "log-ico" + (a.tone ? " s-" + a.tone : "") }, icon(a.ic, 18)),
+          el("div", { class: "log-body" },
+            el("div", { class: "log-t" }, window.I18N.has("audit.act." + r.action) ? T("audit.act." + r.action) : r.action,
+              r.host_name ? el("span", { class: "log-host" }, icon("server", 13), r.host_name) : null),
+            el("div", { class: "muted small log-s" }, sub)),
+          el("time", { class: "log-time muted small", title: fmtDate(r.ts) }, new Date(r.ts * 1000).toLocaleTimeString(loc(), { hour: "2-digit", minute: "2-digit" }))));
+      }
+      if (st.more) out.push(el("div", { class: "log-more" }, button(T("audit.more"), { onclick: () => { st.limit += 200; load(); } })));
+      list.replaceChildren(...out);
+    };
+    const load = () => api(`/api/audit?limit=${st.limit}`).then((d) => { st.rows = d.rows; st.more = d.more; draw(); }).catch(fail);
+    search.addEventListener("input", () => { st.q = search.value; draw(); });
+    const page = el("main", { class: "page" }, el("div", { class: "page-head" }, el("h1", {}, T("audit.title"))), el("p", { class: "muted" }, T("audit.sub")),
+      el("div", { class: "toolbar" }, el("div", { class: "search-wrap" }, icon("search", 16), search),
+        select(["all", "access", "hosts", "console", "requests"].map((k) => ({ value: k, label: T("audit.cat." + k) })), st.cat, (v) => { st.cat = v; draw(); }, { icon: "sliders", label: T("audit.cat.all") })),
+      list);
+    load();
     return page;
   }
 

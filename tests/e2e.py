@@ -141,6 +141,7 @@ call("/api/term/"+sid+"/input","POST",{"d":"exit\r"})
 th.join(15)
 res.append(ok(not th.is_alive(),"после exit поток вывода завершён событием exit"))
 s,au,_=call("/api/audit")
+au=au["rows"]
 acts=[r["action"] for r in au]
 res.append(ok("term-open" in acts and "term-closed" in acts,"аудит: открытие и закрытие консоли"))
 # хост без разрешения консоли
@@ -159,9 +160,30 @@ bad=urllib.request.Request(B+"/agent/poll",data=b"{}",method="POST",headers={"Co
 try: urllib.request.urlopen(bad,timeout=5); res.append(ok(False,"неверный ключ хоста должен давать 401"))
 except urllib.error.HTTPError as e: res.append(ok(e.code==401,"неверный ключ хоста -> 401"))
 s,d,_=call("/api/audit")
-res.append(ok(s==200 and any(r["action"]=="enrolled" for r in d),"аудит содержит регистрацию хоста"))
-# удаление хоста -> агент должен остановиться по 401
-call("/api/hosts/"+hid,"DELETE")
+res.append(ok(s==200 and any(r["action"]=="enrolled" and r["host_name"] for r in d["rows"]),"аудит содержит регистрацию хоста с именем"))
+# удаление хоста -> агент должен остановиться по 401, а из базы пропасть всё
+import sqlite3
+s,dd,_=call("/api/hosts/"+hid,"DELETE")
+res.append(ok(s==200 and dd.get("deleted")==1,"удаление хоста: ответ"))
+cx=sqlite3.connect(os.path.join(tmp,"t.db"))
+res.append(ok(cx.execute("SELECT COUNT(*) FROM hosts WHERE id=?",(hid,)).fetchone()[0]==0,"хост удалён из базы данных"))
+res.append(ok(call("/api/hosts/"+hid,"DELETE")[0]==404,"повторное удаление -> 404"))
+s,au2,_=call("/api/audit")
+dl=[r for r in au2["rows"] if r["action"]=="host-deleted" and r["host"]==hid]
+res.append(ok(dl and dl[0]["host_name"]=="sandbox-linux","журнал помнит имя удалённого хоста"))
+# массовое удаление
+ids=[]
+for nm in ("bulk-a","bulk-b"):
+    s,t,_=call("/api/enroll-tokens","POST",{"label":nm})
+    cfgx=os.path.join(tmp,nm+".json")
+    subprocess.run([AGENT,"enroll","-server",B,"-token",t["token"],"-name",nm,"-config",cfgx],capture_output=True)
+s,hs,_=call("/api/hosts")
+ids=[h["id"] for h in hs if h["name"].startswith("bulk-")]
+res.append(ok(len(ids)==2,"для массового удаления зарегистрировано 2 хоста"))
+res.append(ok(call("/api/hosts/delete","POST",{"ids":[]})[0]==400 and call("/api/hosts/delete","POST",{"ids":"x"})[0]==400,"массовое удаление: пустой и неверный список отклоняются"))
+s,dd,_=call("/api/hosts/delete","POST",{"ids":ids+["несуществующий"]})
+res.append(ok(s==200 and dd.get("deleted")==2,"массовое удаление: удалено 2, лишний id пропущен"))
+res.append(ok(cx.execute("SELECT COUNT(*) FROM hosts WHERE name LIKE 'bulk-%'").fetchone()[0]==0,"массовое удаление: в базе хостов не осталось"))
 time.sleep(30)
 res.append(ok(ag.poll() is not None,"после удаления хоста агент завершился (401)"))
 ag.terminate()
