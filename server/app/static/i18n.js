@@ -94,7 +94,7 @@
 
     "add.title": "Добавить хост", "add.name": "Название (необязательно)", "add.os": "Система", "add.os.mac": "macOS (Apple Silicon)", "add.os.macintel": "macOS (Intel)", "add.os.linux": "Linux (x86-64)",
     "add.terminal": "Разрешить root-консоль из веб-интерфейса (только для администраторов)", "add.create": "Создать токен", "add.token.hint": "Токен действует 24 часа и подходит для одного хоста.",
-    "add.cmd.title": "Выполните на хосте", "add.cmd.note": "Скачайте агент с этой страницы или из папки dist/ проекта, затем выполните команду от имени администратора.",
+    "add.cmd.title": "Выполните на хосте", "add.cmd.note": "Команда сама скачает агент с этого сервера, проверит контрольную сумму и установит службу (macOS и Linux). Если хост не доверяет сертификату сервера, добавьте перед bash: HOSTDECK_CA=/путь/ca.pem. Обновить агент позже можно той же командой без токена.",
     "add.token.label": "Токен", "audit.title": "Журнал действий", "audit.empty": "Записей пока нет",
     "audit.col.time": "Время", "audit.col.actor": "Кто", "audit.col.host": "Хост", "audit.col.action": "Действие", "audit.col.detail": "Подробности",
 
@@ -196,7 +196,7 @@
 
     "add.title": "Add a host", "add.name": "Name (optional)", "add.os": "System", "add.os.mac": "macOS (Apple Silicon)", "add.os.macintel": "macOS (Intel)", "add.os.linux": "Linux (x86-64)",
     "add.terminal": "Allow a root console from the web UI (administrators only)", "add.create": "Create token", "add.token.hint": "The token is valid for 24 hours and works for one host.",
-    "add.cmd.title": "Run on the host", "add.cmd.note": "Download the agent from this page or from the project's dist/ folder, then run the command as an administrator.",
+    "add.cmd.title": "Run on the host", "add.cmd.note": "The command downloads the agent from this server, verifies its checksum and installs the service (macOS and Linux). If the host does not trust the server certificate, add HOSTDECK_CA=/path/ca.pem before bash. To update the agent later, run the same command without a token.",
     "add.token.label": "Token", "audit.title": "Audit log", "audit.empty": "No entries yet",
     "audit.col.time": "Time", "audit.col.actor": "Who", "audit.col.host": "Host", "audit.col.action": "Action", "audit.col.detail": "Details",
 

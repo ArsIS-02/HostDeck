@@ -1,7 +1,9 @@
 """HostDeck: сервер инвентаризации и управления хостами (Starlette, без внешних зависимостей сверх requirements.txt)."""
 import asyncio
 import base64
+import hashlib
 import json
+import re
 import os
 import secrets
 import time
@@ -10,13 +12,16 @@ from contextlib import asynccontextmanager
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from . import db
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
+AGENT_DIR = os.environ.get("HOSTDECK_AGENT_DIR", "/agents")   # сюда образ кладёт собранные агенты
+AGENT_FILE = re.compile(r"^hostdeck-agent-(darwin|linux)-(arm64|amd64)$")
+HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:\d{1,5})?$")
 SESSION_COOKIE = "hd_session"
 SESSION_TTL = 12 * 3600
 ONLINE_WINDOW = 90          # секунд без опроса -> хост офлайн
@@ -549,6 +554,50 @@ async def agent_report(request: Request):
     return err("неизвестный тип отчёта")
 
 
+# --- установка агента: скрипт и бинарники отдаёт сам сервер -------------------
+async def install_script(request: Request):
+    host = request.headers.get("host", "")
+    if not HOST_RE.match(host):
+        return PlainTextResponse("некорректный заголовок Host\n", status_code=400)
+    with open(os.path.join(os.path.dirname(__file__), "install.sh"), encoding="utf-8") as f:
+        text = f.read().replace("@@SERVER@@", f"{request.url.scheme}://{host}")
+    return PlainTextResponse(text, media_type="text/x-shellscript; charset=utf-8")
+
+
+_sums = {"key": None, "text": ""}
+
+
+def agent_sums():
+    try:
+        names = sorted(n for n in os.listdir(AGENT_DIR) if AGENT_FILE.match(n))
+    except OSError:
+        return ""
+    key = tuple((n, os.stat(os.path.join(AGENT_DIR, n)).st_mtime_ns) for n in names)
+    if key != _sums["key"]:
+        lines = []
+        for n in names:
+            h = hashlib.sha256()
+            with open(os.path.join(AGENT_DIR, n), "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            lines.append(f"{h.hexdigest()}  {n}")
+        _sums["key"], _sums["text"] = key, "\n".join(lines) + ("\n" if lines else "")
+    return _sums["text"]
+
+
+async def download(request: Request):
+    name = request.path_params["name"]
+    if name == "SHA256SUMS":
+        text = agent_sums()
+        return PlainTextResponse(text) if text else err("агенты не найдены на сервере", 404)
+    if not AGENT_FILE.match(name):
+        return err("файл не найден", 404)
+    path = os.path.join(AGENT_DIR, name)
+    if not os.path.isfile(path):
+        return err("файл не найден", 404)
+    return FileResponse(path, media_type="application/octet-stream", filename=name)
+
+
 async def index(request: Request):
     return FileResponse(os.path.join(STATIC, "index.html"))
 
@@ -590,6 +639,8 @@ app = Starlette(
         Route("/api/hosts/{id}", host_delete, methods=["DELETE"]),
         Route("/api/enroll-tokens", token_create, methods=["POST"]),
         Route("/api/audit", audit_list),
+        Route("/install.sh", install_script),
+        Route("/dl/{name}", download),
         Route("/agent/enroll", agent_enroll, methods=["POST"]),
         Route("/agent/poll", agent_poll, methods=["POST"]),
         Route("/agent/report", agent_report, methods=["POST"]),

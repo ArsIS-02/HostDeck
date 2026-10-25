@@ -73,7 +73,7 @@ try:
                 pg.click("text=Add a host >> nth=0"); pg.wait_for_selector(".dialog")
                 pg.click(".dialog .btn.primary"); pg.wait_for_selector(".dialog .code")
                 cmd = pg.inner_text(".dialog .code")
-                ok("hde_" in cmd and "install-mac.sh" in cmd, "диалог добавления: выдан токен и команда")
+                ok("hde_" in cmd and "/install.sh" in cmd and "bash -s --" in cmd, "диалог добавления: выдан токен и команда")
                 pg.screenshot(path=f"{OUT}/add-en-dark.png")
                 pg.keyboard.press("Escape"); pg.wait_for_selector(".dialog", state="detached")
                 ok(True, "диалог закрывается по Esc")

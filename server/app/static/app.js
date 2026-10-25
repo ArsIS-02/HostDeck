@@ -342,12 +342,8 @@
   // --- диалог добавления хоста ----------------------------------------------------------------------------------------------------
   async function addHostDialog() {
     const nameIn = el("input", { class: "input", placeholder: T("add.name"), "aria-label": T("add.name"), maxlength: 60 });
-    let osv = "mac";
     const termCb = checkbox({ label: T("add.terminal") });
-    const osSel = select([{ value: "mac", label: T("add.os.mac"), icon: "laptop" }, { value: "macintel", label: T("add.os.macintel"), icon: "laptop" }, { value: "linux", label: T("add.os.linux"), icon: "server" }],
-      osv, (v) => { osv = v; }, { label: T("add.os") });
     const body = el("div", { class: "form" }, el("label", { class: "field" }, el("span", {}, T("add.name")), nameIn),
-      el("div", { class: "field" }, el("span", {}, T("add.os")), osSel),
       el("label", { class: "cb-line" }, termCb, el("span", {}, T("add.terminal"))), el("p", { class: "muted small" }, T("add.token.hint")));
     let created = false;
     await dialog({
@@ -361,11 +357,8 @@
             const r = await api("/api/enroll-tokens", { method: "POST", body: { label: nameIn.value } });
             created = true;
             const name = nameIn.value.trim();
-            const bin = osv === "linux" ? "hostdeck-agent-linux-amd64" : osv === "macintel" ? "hostdeck-agent-darwin-amd64" : "hostdeck-agent-darwin-arm64";
             const tflag = termCb.checked;
-            const cmd = osv === "linux"
-              ? `sudo ./${bin} enroll -server ${location.origin} -token ${r.token}${name ? ` -name ${name}` : ""}${tflag ? " -terminal" : ""}\nsudo ./${bin} run`
-              : `sudo ${tflag ? "HOSTDECK_TERMINAL=1 " : ""}./install-mac.sh ${location.origin} ${r.token}${name ? ` ${name}` : ""}`;
+            const cmd = `curl -fsSL ${location.origin}/install.sh | sudo ${tflag ? "HOSTDECK_TERMINAL=1 " : ""}bash -s -- ${r.token}${name ? ` ${name}` : ""}`;
             const pre = el("pre", { class: "code" }, cmd);
             body.replaceChildren(el("h3", { class: "small-h" }, T("add.cmd.title")), pre, el("p", { class: "muted small" }, T("add.cmd.note")),
               el("div", { class: "row" }, button(T("common.copy"), { icon: "copy", onclick: async (e) => {

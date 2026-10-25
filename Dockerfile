@@ -1,13 +1,24 @@
+# Этап 1: сборка агентов под macOS и Linux (статические бинарники без CGO)
+FROM docker.io/library/golang:1.24 AS agents
+WORKDIR /src
+COPY agent/ ./
+RUN set -e; mkdir /agents; \
+    for t in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do \
+      CGO_ENABLED=0 GOOS=${t%-*} GOARCH=${t#*-} go build -trimpath -ldflags "-s -w" -o /agents/hostdeck-agent-$t . ; \
+    done
+
+# Этап 2: сервер
 FROM docker.io/library/python:3.13-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /srv
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY server/app ./app
+COPY --from=agents /agents /agents
 RUN useradd --system --uid 10001 --no-create-home hostdeck && mkdir -p /data /run/secrets && touch /run/secrets/admin_pw && chown hostdeck /data
 USER hostdeck
 VOLUME /data
-ENV HOSTDECK_DB=/data/hostdeck.db
+ENV HOSTDECK_DB=/data/hostdeck.db HOSTDECK_AGENT_DIR=/agents
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/static/style.css',timeout=4)"
 # --proxy-headers: схема https берётся от обратного прокси (нужна для Secure-cookie)

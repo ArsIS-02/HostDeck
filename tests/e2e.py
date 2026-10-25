@@ -9,7 +9,7 @@ with socket.socket() as s:
     s.bind(("127.0.0.1", 0)); PORT = s.getsockname()[1]
 B = f"http://127.0.0.1:{PORT}"
 pw = secrets.token_urlsafe(12)
-env = dict(os.environ, HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
+env = dict(os.environ, HOSTDECK_AGENT_DIR=os.path.join(ROOT, "dist"), HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
 srv = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(PORT), "--log-level", "warning"],
                        cwd=os.path.join(ROOT, "server"), env=env)
 for _ in range(50):
@@ -42,6 +42,25 @@ res.append(ok(ck.has_nonstandard_attr("HttpOnly") and ck.get_nonstandard_attr("S
 res.append(ok("default-src 'self'" in h.get("Content-Security-Policy",""),"заголовок CSP"))
 s,d,_=call("/api/enroll-tokens","POST",{"label":"e2e"}); tok=d["token"]
 res.append(ok(s==200 and tok.startswith("hde_"),"токен регистрации создан"))
+# установка: скрипт и бинарники отдаёт сервер
+def raw(path,headers=None):
+    r=urllib.request.Request(B+path,headers=headers or {})
+    try:
+        with urllib.request.urlopen(r,timeout=20) as resp: return resp.status,resp.read()
+    except urllib.error.HTTPError as e: return e.code,e.read()
+s,scr=raw("/install.sh")
+res.append(ok(s==200 and (B).encode() in scr and b"@@SERVER@@" not in scr.replace(b'"@@SERVER@@"',b'').replace(b"@@*",b""),"/install.sh отдаётся с адресом сервера, без входа"))
+res.append(ok(raw("/install.sh",{"Host":"x;rm -rf /"})[0]==400,"/install.sh отклоняет подозрительный заголовок Host"))
+s,sums=raw("/dl/SHA256SUMS")
+res.append(ok(s==200 and b"hostdeck-agent-linux-amd64" in sums and b"hostdeck-agent-darwin-arm64" in sums,"SHA256SUMS перечисляет агентов"))
+s,binr=raw("/dl/hostdeck-agent-linux-amd64")
+import hashlib
+want=[l.split()[0] for l in sums.decode().splitlines() if l.endswith("hostdeck-agent-linux-amd64")][0]
+res.append(ok(s==200 and hashlib.sha256(binr).hexdigest()==want,"бинарник скачивается, сумма совпадает"))
+res.append(ok(raw("/dl/..%2f..%2fetc%2fpasswd")[0]==404 and raw("/dl/evil")[0]==404,"/dl не отдаёт посторонние файлы"))
+sc=os.path.join(tmp,"install.sh"); open(sc,"wb").write(scr)
+r=subprocess.run(["bash",sc,"dryrun-token"],env=dict(os.environ,HOSTDECK_DRYRUN="1"),capture_output=True,text=True)
+res.append(ok(r.returncode==0 and "Контрольная сумма совпала" in r.stdout and "DRYRUN" in r.stdout,"скрипт установки: скачивание и проверка суммы (dry-run) "+r.stdout.strip().replace("\n"," | ")[-120:]+r.stderr[-120:]))
 # агент
 env=dict(os.environ); cfg=os.path.join(tmp,"agent.json")
 if os.path.exists(cfg): os.remove(cfg)
