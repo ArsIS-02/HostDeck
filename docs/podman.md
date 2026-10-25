@@ -69,7 +69,7 @@ location / {
 
 - **`Permission denied` на `/data`** при bind-mount каталога из домашней папки: в rootless-режиме uid внутри контейнера (10001) отображается на другой uid хоста. Используйте именованный том, как в юните, либо `podman unshare chown 10001:10001 ./data`.
 - **SELinux** на RED OS блокирует чтение bind-mount: добавьте `:Z` к тому (`-v ./data:/data:Z`). Именованному тому метка не нужна.
-- **`error mounting ... /run/secrets/admin_pw: read-only file system`**: при `ReadOnly=true` в образе должен существовать пустой файл `/run/secrets/admin_pw` (создаётся в Dockerfile): Podman не может создать точку монтирования в ФС только для чтения.
+- **`error mounting ... /run/secrets/admin_pw: read-only file system`**: на RED OS (runc) секрет нельзя смонтировать при `ReadOnly=true`, даже если файл-точка есть в образе. Поэтому в юните `ReadOnly` не используется; защита держится на непривилегированном пользователе, `DropCapability=ALL` и `NoNewPrivileges`.
 - **`HEALTHCHECK` игнорируется**, если образ собран не в формате docker: `podman build --format docker ...`.
 - **Порты ниже 1024** в rootless недоступны: поэтому контейнер на 8080.
 

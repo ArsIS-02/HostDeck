@@ -21,7 +21,7 @@ Environment=HOSTDECK_ADMIN_PASSWORD_FILE=/run/secrets/admin_pw
 Environment=HOSTDECK_ADMIN_USER=admin
 # Заголовки X-Forwarded-* принимаются от любого адреса: контейнер виден только Caddy в n8n-net и localhost хоста
 Environment=FORWARDED_ALLOW_IPS=*
-ReadOnly=true
+# ReadOnly=true не используем: runc на RED OS не создаёт точку монтирования секрета в ФС только для чтения
 Tmpfs=/tmp
 NoNewPrivileges=true
 DropCapability=ALL
