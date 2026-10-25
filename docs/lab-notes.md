@@ -72,6 +72,17 @@ systemctl --user daemon-reload && systemctl --user restart hostdeck
 
 **Сертификат внутреннего CA для установки агентов.** Корень Caddy кладётся в `~/hostdeck-ca/ca.pem` и монтируется в контейнер drop-in'ом `ca.conf` (см. `docs/podman.md`, раздел 3a). Файл должен быть читаем внутри контейнера: `chmod 644 ~/hostdeck-ca/ca.pem`, иначе `/ca.pem` отдаёт 404, потому что сервис работает не от root.
 
+**Панель Atrium и красная лампочка у HostDeck.** Atrium проверяет бэкенд со своей стороны. HostDeck доступен Caddy по имени контейнера (`reverse_proxy http://hostdeck:8080`, сеть `n8n-net`), а Atrium в `n8n-net` нет. Поэтому «Проверить бэкенд» пишет «нет ответа», хотя сайт работает. В `services.yaml` для этого сервиса должно стоять `backend: hostdeck:8080`, `scheme: http`; не вписывайте в форму `имя.monitoring.test:8080`, иначе после перезагрузки Caddy сайт перестанет открываться.
+
+Чтобы лампочка стала зелёной без публикации порта наружу, контейнер Atrium пересоздают с сетью `n8n-net` (в сетевом режиме `pasta` подключить вторую сеть на лету нельзя, `podman network connect` отказывает). Данные Atrium лежат в каталогах хоста, поэтому пересоздание безопасно:
+
+```bash
+podman stop atrium && podman rename atrium atrium-old
+podman run -d --name atrium --restart=always --network n8n-net -p 5000:5000 -e ZONE=apps.monitoring.test \
+  -v /home/redos/homelab-services:/data:z -v /home/redos/n8n-docker-caddy/caddy_config:/caddy:z localhost/atrium:v1.0.0
+# откат: podman rm -f atrium && podman rename atrium-old atrium && podman start atrium
+```
+
 **Системный `curl` macOS игнорирует `--cacert`** (SecureTransport). Поэтому установщик не полагается на проверку канала: подлинность CA и скрипта подтверждают отпечатки в команде, суммы агентов вшиты в скрипт, а токен отправляет сам агент с проверкой по CA.
 
 **DNS на Mac.** Если домашний DNS не отвечает, а публичные резолверы не знают зону `.test`, добавьте запись в `/etc/hosts`: `192.168.1.137 hostdeck.apps.monitoring.test`.
