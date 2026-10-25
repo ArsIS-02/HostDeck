@@ -35,6 +35,8 @@ cp .env.example .env        # задайте HOSTDECK_ADMIN_PASSWORD
 docker compose up -d --build
 ```
 
+Для Podman на RED OS (rootless, Quadlet, секрет для пароля) см. [docs/podman.md](docs/podman.md).
+
 Откройте сервис через ваш обратный прокси с TLS и войдите под `admin`. Порт 8080 слушает только `127.0.0.1`.
 
 Агент на Mac:

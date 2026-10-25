@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM docker.io/library/python:3.13-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /srv
 COPY server/requirements.txt .

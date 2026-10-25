@@ -92,6 +92,13 @@ def ensure_admin():
     if q1("SELECT 1 FROM users LIMIT 1"):
         return None
     pw = os.environ.get("HOSTDECK_ADMIN_PASSWORD")
+    pw_file = os.environ.get("HOSTDECK_ADMIN_PASSWORD_FILE")  # для podman/docker secret
+    if not pw and pw_file:
+        try:
+            with open(pw_file, encoding="utf-8") as f:
+                pw = f.read().strip()
+        except OSError:
+            return "no-admin"
     if not pw:
         return "no-admin"
     name = os.environ.get("HOSTDECK_ADMIN_USER", "admin")

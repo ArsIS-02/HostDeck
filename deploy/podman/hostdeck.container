@@ -1,0 +1,31 @@
+# Quadlet-юнит для rootless Podman (Podman 4.4+).
+# Положите в ~/.config/containers/systemd/hostdeck.container, затем:
+#   systemctl --user daemon-reload && systemctl --user start hostdeck
+# Автозапуск без входа пользователя: loginctl enable-linger $USER
+[Unit]
+Description=HostDeck
+After=network-online.target
+
+[Container]
+Image=localhost/hostdeck:latest
+ContainerName=hostdeck
+# Наружу только на localhost: TLS и доступ из сети даёт обратный прокси
+PublishPort=127.0.0.1:8080:8080
+# Именованный том: права и SELinux-метки Podman выставляет сам
+Volume=hostdeck-data.volume:/data
+# Пароль первого администратора из podman secret (нужен только при первом запуске)
+Secret=hostdeck_admin_pw,type=mount,target=/run/secrets/admin_pw
+Environment=HOSTDECK_ADMIN_PASSWORD_FILE=/run/secrets/admin_pw
+Environment=HOSTDECK_ADMIN_USER=admin
+# IP обратного прокси (откуда приходят X-Forwarded-*)
+Environment=FORWARDED_ALLOW_IPS=127.0.0.1
+ReadOnly=true
+Tmpfs=/tmp
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
