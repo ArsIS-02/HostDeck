@@ -614,7 +614,7 @@
         curHost = h;
         const x = h.info || {};
         document.title = h.name + " — HostDeck";
-        head.replaceChildren(
+        head.replaceChildren(...[
           avatar(h, "lg", 38),
           el("div", { class: "host-title" }, el("h1", {}, h.name), el("div", { class: "muted" }, [x.model, osLine(x), x.chip].filter(Boolean).join(" · "))),
           badge(h.status, T("status." + h.status), 16),
@@ -629,7 +629,7 @@
             const ok = await confirmDialog({ title: T("host.delete.title", { name: h.name }), body: T("host.delete.body"), ok: T("common.delete") });
             if (!ok) return;
             try { await api("/api/hosts/" + id, { method: "DELETE" }); toast(T("host.deleted")); location.hash = "#/hosts"; } catch (e) { fail(e); }
-          } }) : null);
+          } }) : null].filter(Boolean));
         if (hostTab === "software" && swState.hostId !== id) await loadSoftware(h);
         drawHostBody();
       } catch (e) {

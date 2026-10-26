@@ -88,6 +88,7 @@ try:
                 pg.focus(".check.s-ok .badge"); pg.wait_for_selector(".tip.on")
                 ok("nothing to change" in pg.inner_text(".tip"), "подсказка по клавиатуре (фокус), для «в порядке» — без лишних шагов")
                 pg.keyboard.press("Escape"); pg.wait_for_selector(".tip", state="detached")
+                ok("null" not in pg.inner_text(".host-head").lower(), "в шапке хоста нет текста «null»")
                 # обновление агента из веб-интерфейса
                 ok(pg.locator(".chip.c-warn", has_text="Version 0.5.0 available").count() == 1, "в шапке хоста метка «доступна версия 0.5.0»")
                 pg.click("button:has-text('Update agent')"); pg.wait_for_selector("text=download the new agent")
