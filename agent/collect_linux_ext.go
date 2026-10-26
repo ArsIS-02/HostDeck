@@ -212,6 +212,7 @@ func linuxCompliance(p *Posture, active func(string) bool) {
 		}
 	}
 	linuxLogForward(add, active)
+	linuxProbeChecks(add, active)
 
 	// --- целостность файлов ---
 	linuxIntegrity(add, active)
