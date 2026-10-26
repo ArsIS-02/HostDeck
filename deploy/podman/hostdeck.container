@@ -1,0 +1,33 @@
+# Quadlet-юнит для rootless Podman (Podman 4.4+).
+# Положите в ~/.config/containers/systemd/hostdeck.container, затем:
+#   systemctl --user daemon-reload && systemctl --user start hostdeck
+# Автозапуск без входа пользователя: loginctl enable-linger $USER
+[Unit]
+Description=HostDeck
+After=network-online.target
+
+[Container]
+Image=localhost/hostdeck:latest
+ContainerName=hostdeck
+# Контейнер в одной сети с Caddy (n8n-net): Caddy ходит на hostdeck:8080, наружу порт не публикуется.
+# Для отладки с самого хоста порт открыт только на localhost.
+Network=n8n-net
+PublishPort=127.0.0.1:8080:8080
+# Именованный том: права и SELinux-метки Podman выставляет сам
+Volume=hostdeck-data.volume:/data
+# Пароль первого администратора из podman secret (нужен только при первом запуске)
+Secret=hostdeck_admin_pw,type=mount,target=/run/secrets/admin_pw
+Environment=HOSTDECK_ADMIN_PASSWORD_FILE=/run/secrets/admin_pw
+Environment=HOSTDECK_ADMIN_USER=admin
+# Заголовки X-Forwarded-* принимаются от любого адреса: контейнер виден только Caddy в n8n-net и localhost хоста
+Environment=FORWARDED_ALLOW_IPS=*
+# ReadOnly=true не используем: runc на RED OS не создаёт точку монтирования секрета в ФС только для чтения
+Tmpfs=/tmp
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
