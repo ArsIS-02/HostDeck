@@ -260,6 +260,7 @@
           me.role === "admin" ? button(T("home.cta.guide"), { icon: "book", onclick: guideDialog }) : null)),
       el("section", { class: "stats" }, stat("server", c.hosts, T("home.stat.hosts"), "neutral"), stat("check", c.online, T("home.stat.online"), "ok"),
         stat("alert", c.warn, T("home.stat.warn"), "warn"), stat("x", c.fail, T("home.stat.problems"), "fail")),
+      expiringCard(),
       el("h2", { class: "sec" }, T("home.how.title")), el("section", { class: "grid3" }, how),
       el("section", { class: "split" },
         el("div", { class: "card" }, el("h2", { class: "sec in" }, T("home.start.title")),
@@ -366,11 +367,53 @@
     const n = [...selected].filter((id) => hosts.some((h) => h.id === id)).length;
     bulkBox.replaceChildren(...(n > 0 ? [el("div", { class: "bulk" }, el("span", { class: "bulk-n" }, T("hosts.selected", { n })),
       me.role !== "viewer" ? button(T("hosts.refresh.sel"), { icon: "refresh", onclick: bulkRefresh }) : null,
+      me.role !== "viewer" ? button(T("hosts.profile.sel"), { icon: "sliders", onclick: () => bulkProfile(hosts.filter((h) => selected.has(h.id))) }) : null,
+      me.role !== "viewer" ? button(T("hosts.exc.sel"), { icon: "shield", onclick: () => bulkException(hosts.filter((h) => selected.has(h.id))) }) : null,
       button(T("hosts.export.sel"), { icon: "download", onclick: () => exportFleet(hosts.filter((h) => selected.has(h.id))) }),
       me.role === "admin" ? button(T("hosts.update.sel"), { icon: "refresh", onclick: () => updateAgents(hosts.filter((h) => selected.has(h.id))) }) : null,
       me.role === "admin" ? button(T("hosts.delete.sel"), { icon: "trash", kind: "danger-ghost", onclick: () => deleteHosts(hosts.filter((h) => selected.has(h.id))) }) : null,
       button("", { icon: "x", kind: "ghost", title: T("common.cancel"), onclick: () => { selected.clear(); drawHosts(); } }))] : []));
   }
+  // Групповые операции: профиль и исключение сразу для нескольких выбранных хостов
+  async function bulkProfile(list) {
+    if (!list.length) return;
+    const sel = el("select", { class: "input", "aria-label": T("profile.cap") }, ["server", "laptop", "lab"].map((v) => el("option", { value: v }, T("profile." + v))));
+    const body = el("div", { class: "form" }, el("p", {}, T("bulk.profile.body", { n: list.length })), el("label", {}, T("profile.cap")), sel,
+      el("p", { class: "muted small" }, T("profile.hint")));
+    const yes = await dialog({ title: T("hosts.profile.sel"), icon: "sliders", tone: "info", body, buttons: [{ text: T("common.cancel"), value: false }, { text: T("bulk.apply"), value: true, kind: "primary" }] });
+    if (!yes) return;
+    try { const r = await api("/api/hosts/profile", { method: "POST", body: { ids: list.map((h) => h.id), profile: sel.value } }); toast(T("bulk.done", { n: r.updated })); try { hosts = await api("/api/hosts"); } catch (_) { /* список обновится при следующем опросе */ } drawHosts(); } catch (e) { fail(e); }
+  }
+  async function bulkException(list) {
+    if (!list.length) return;
+    // какие проверки сейчас не в порядке хотя бы у одного из выбранных хостов
+    let details = [];
+    try { details = await Promise.all(list.map((h) => api("/api/hosts/" + h.id))); } catch (e) { fail(e); return; }
+    const found = new Map();
+    details.forEach((d) => (d.checks || []).forEach((c) => { if (["warn", "fail", "unknown"].includes(c.raw_status)) found.set(c.id, (found.get(c.id) || 0) + 1); }));
+    if (!found.size) { toast(T("bulk.exc.none")); return; }
+    const chk = el("select", { class: "input", "aria-label": T("exc.check") }, [...found.entries()].sort((a, b) => b[1] - a[1]).map(([id, n]) => el("option", { value: id }, `${checkLabel(id)} (${n})`)));
+    const reason = el("input", { type: "text", class: "input", maxlength: "300", placeholder: T("exc.reason.ph"), "aria-label": T("exc.reason") });
+    const days = el("select", { class: "input", "aria-label": T("exc.days") }, [[0, T("exc.forever")], [30, "30"], [90, "90"], [365, "365"]].map(([v, t]) => el("option", { value: String(v) }, v ? T("exc.days.n", { n: t }) : t)));
+    const body = el("div", { class: "form" }, el("p", {}, T("bulk.exc.body", { n: list.length })), el("label", {}, T("exc.check")), chk, el("label", {}, T("exc.reason")), reason, el("label", {}, T("exc.days")), days);
+    const yes = await dialog({ title: T("hosts.exc.sel"), icon: "shield", tone: "info", body, buttons: [{ text: T("common.cancel"), value: false }, { text: T("exc.add"), value: true, kind: "primary" }] });
+    if (!yes) return;
+    try { const r = await api("/api/hosts/exceptions", { method: "POST", body: { ids: list.map((h) => h.id), check: chk.value, reason: reason.value, days: Number(days.value) || null } }); toast(T("bulk.done", { n: r.updated })); try { hosts = await api("/api/hosts"); } catch (_) { /* список обновится при следующем опросе */ } drawHosts(); } catch (e) { fail(e); }
+  }
+  // Обзор: исключения, срок которых истекает или истёк, чтобы замечание не вернулось неожиданно
+  function expiringCard() {
+    const box = el("section", { class: "card exp", hidden: true });
+    api("/api/exceptions?days=7").then((list) => {
+      if (!list.length) return;
+      box.hidden = false;
+      box.replaceChildren(el("h2", { class: "sec in" }, T("exp.title")), el("p", { class: "muted small" }, T("exp.sub")),
+        el("ul", { class: "exp-list" }, list.map((x) => el("li", {}, el("a", { href: "#/host/" + x.host_id }, x.host), " · ", el("b", {}, checkLabel(x.check)), " · ",
+          el("span", { class: x.expired ? "exp-late" : "" }, x.expired ? T("exp.expired", { d: new Date(x.expires * 1000).toLocaleDateString(loc(), { day: "numeric", month: "short" }) }) : T("exp.until", { d: new Date(x.expires * 1000).toLocaleDateString(loc(), { day: "numeric", month: "short" }) })),
+          el("span", { class: "muted" }, " — " + x.reason)))));
+    }).catch(() => {});
+    return box;
+  }
+
   // Обновление агентов с веб-интерфейса: сервер ставит хостам команду, а хост скачивает нового агента с сервера, сверяет сумму и перезапускается.
   // Работает только на хостах, где обновление разрешено при установке (флаг HOSTDECK_AUTOUPDATE=1).
   async function updateAgents(list) {

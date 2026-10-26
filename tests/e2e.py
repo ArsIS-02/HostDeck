@@ -262,6 +262,18 @@ if bad:
     ck=[c for c in d3["checks"] if c["id"]==cid][0]
     res.append(ok(ck["status"]==ck["raw_status"] and d3["exceptions"]==0,"снятие исключения возвращает статус"))
 call("/api/hosts/"+hid+"/profile","POST",{"profile":"server"})
+# групповые операции
+ids_all=[h["id"] for h in call("/api/hosts")[1]]
+s,r,_=call("/api/hosts/profile","POST",{"ids":ids_all,"profile":"laptop"})
+res.append(ok(s==200 and r["updated"]==len(ids_all) and all(h["profile"]=="laptop" for h in call("/api/hosts")[1]),"групповая смена профиля применяется ко всем выбранным"))
+res.append(ok(call("/api/hosts/profile","POST",{"ids":[],"profile":"lab"})[0]==400 and call("/api/hosts/profile","POST",{"ids":ids_all,"profile":"x"})[0]==400,"групповой профиль: пустой список и неверный профиль отклоняются"))
+call("/api/hosts/profile","POST",{"ids":ids_all,"profile":"server"})
+s,r,_=call("/api/hosts/exceptions","POST",{"ids":ids_all,"check":"firewall","reason":"групповое исключение","days":3})
+res.append(ok(s==200 and r["updated"]==len(ids_all),"групповое исключение добавлено"))
+s,ex,_=call("/api/exceptions?days=7")
+res.append(ok(s==200 and len(ex)==len(ids_all) and all(not x["expired"] for x in ex),"напоминания: исключения со сроком до 7 дней видны в списке"))
+for i in ids_all: call("/api/hosts/"+i+"/exceptions/firewall","DELETE")
+res.append(ok(call("/api/exceptions?days=7")[1]==[],"после снятия исключений список пуст"))
 s,hs,_=call("/api/hosts/"+hid+"/history?days=30")
 res.append(ok(s==200 and hs["days"]==30 and len(hs["points"])>=1 and isinstance(hs["changes"],list),"история: точки индекса есть, список смен отдаётся"))
 res.append(ok(call("/api/hosts/"+hid+"/history?days=abc")[0]==400 and call("/api/hosts/nonexistent/history")[0]==404,"история: неверный период → 400, нет хоста → 404"))

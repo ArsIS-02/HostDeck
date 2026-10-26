@@ -142,6 +142,11 @@ try:
                 p2 = os.path.join(tmp, "fleet.csv"); dl2.value.save_as(p2)
                 t2 = open(p2, "rb").read().decode("utf-8-sig").splitlines()
                 ok(len(t2) == 2, "CSV парка: заголовок + выбранный хост")
+                # групповой профиль: диалог, применение, уведомление
+                pg.click(".bulk .btn >> text=Profile…"); pg.wait_for_selector(".dialog select")
+                pg.select_option(".dialog select", "lab")
+                pg.click(".dialog .btn.primary"); pg.wait_for_selector("text=Hosts changed: 1", timeout=15000)
+                ok(True, "групповой профиль применяется к выбранному хосту")
                 # фильтр
                 pg.click(".bulk .btn.ghost")
                 pg.click(".toolbar .select >> nth=0 >> button"); pg.click(".select-opt >> text=With problems")

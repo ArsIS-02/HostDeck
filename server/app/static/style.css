@@ -267,3 +267,4 @@ tr.off { opacity: .7; } .c-cb { width: 44px; } .cell-host { display: flex; align
 .hc-foot .btn { margin-left: auto; padding: 4px 8px; }
 .check-act { margin-top: 6px; } .check-act .btn { font-size: 12px; padding: 3px 10px; }
 .hist-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; } .hist-chart { width: 100%; height: auto; max-height: 240px; } .hist .table-wrap { overflow-x: auto; } .hist td { vertical-align: middle; }
+.exp { margin: 16px 0; } .exp-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; } .exp-late { color: var(--fail); font-weight: 600; }

@@ -551,6 +551,88 @@ async def host_history(request: Request):
     return JSONResponse({"days": days, "changes": changes, "points": points})
 
 
+def _ids(data):
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids or len(ids) > 500 or not all(isinstance(i, str) for i in ids):
+        return None
+    return [i for i in dict.fromkeys(ids) if db.q1("SELECT 1 FROM hosts WHERE id=?", (i,))]
+
+
+def _exc_args(data):
+    """Проверка параметров исключения. Возвращает (check, reason, days, expires) или текст ошибки."""
+    cid, reason = str(data.get("check") or "").strip(), str(data.get("reason") or "").strip()
+    if not re.fullmatch(r"[a-z0-9_]{1,40}", cid):
+        return "не указана проверка"
+    if not (3 <= len(reason) <= 300):
+        return "причина обязательна (от 3 до 300 знаков)"
+    days = data.get("days")
+    if days in (None, "", 0):
+        return cid, reason, None, None
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        return "срок должен быть числом дней"
+    if not 1 <= days <= 3650:
+        return "срок от 1 до 3650 дней"
+    return cid, reason, days, time.time() + days * 86400
+
+
+async def hosts_profile_many(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    prof, ids = data.get("profile"), _ids(data)
+    if prof not in PROFILES:
+        return err("профиль: server, laptop или lab")
+    if ids is None:
+        return err("нужен список ids")
+    for hid in ids:
+        db.x("UPDATE hosts SET profile=? WHERE id=?", (prof, hid))
+        db.audit(u["name"], "profile-set", host=hid, detail=prof)
+    return JSONResponse({"updated": len(ids)})
+
+
+async def hosts_exception_many(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    ids = _ids(data)
+    if ids is None:
+        return err("нужен список ids")
+    a = _exc_args(data)
+    if isinstance(a, str):
+        return err(a)
+    cid, reason, days, expires = a
+    for hid in ids:
+        db.x("INSERT OR REPLACE INTO exceptions(host_id,check_id,reason,expires,actor,created) VALUES(?,?,?,?,?,?)",
+             (hid, cid, reason, expires, u["name"], time.time()))
+        db.audit(u["name"], "exception-set", host=hid, detail=f"{cid}: {reason}" + (f" (дней: {days})" if expires else ""))
+    return JSONResponse({"updated": len(ids)})
+
+
+async def exceptions_list(request: Request):
+    """Исключения, срок которых истекает в ближайшие N дней, и недавно истёкшие (они уже не действуют)."""
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    try:
+        days = max(1, min(int(request.query_params.get("days", "7")), 365))
+    except ValueError:
+        return err("days: число")
+    now = time.time()
+    rows = db.q("SELECT x.host_id,h.name,x.check_id,x.reason,x.expires FROM exceptions x JOIN hosts h ON h.id=x.host_id "
+                "WHERE x.expires IS NOT NULL AND x.expires<? AND x.expires>? ORDER BY x.expires", (now + days * 86400, now - 14 * 86400))
+    return JSONResponse([{"host_id": r["host_id"], "host": r["name"], "check": r["check_id"], "reason": r["reason"], "expires": r["expires"], "expired": r["expires"] <= now} for r in rows])
+
+
 async def host_profile_set(request: Request):
     u, e = need(request, "operator")
     if e:
@@ -579,22 +661,10 @@ async def exception_set(request: Request):
         data = await body(request)
     except ValueError as ex:
         return err(str(ex))
-    cid, reason = str(data.get("check") or "").strip(), str(data.get("reason") or "").strip()
-    if not re.fullmatch(r"[a-z0-9_]{1,40}", cid):
-        return err("не указана проверка")
-    if not (3 <= len(reason) <= 300):
-        return err("причина обязательна (от 3 до 300 знаков)")
-    days = data.get("days")
-    if days in (None, "", 0):
-        expires = None
-    else:
-        try:
-            days = int(days)
-        except (TypeError, ValueError):
-            return err("срок должен быть числом дней")
-        if not 1 <= days <= 3650:
-            return err("срок от 1 до 3650 дней")
-        expires = time.time() + days * 86400
+    a = _exc_args(data)
+    if isinstance(a, str):
+        return err(a)
+    cid, reason, days, expires = a
     if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
         return err("хост не найден", 404)
     db.x("INSERT OR REPLACE INTO exceptions(host_id,check_id,reason,expires,actor,created) VALUES(?,?,?,?,?,?)",
@@ -1040,6 +1110,9 @@ app = Starlette(
         Route("/api/enroll-tokens", token_create, methods=["POST"]),
         Route("/api/audit", audit_list),
         Route("/api/hosts/delete", hosts_delete_many, methods=["POST"]),
+        Route("/api/hosts/profile", hosts_profile_many, methods=["POST"]),
+        Route("/api/hosts/exceptions", hosts_exception_many, methods=["POST"]),
+        Route("/api/exceptions", exceptions_list),
         Route("/api/hosts/update", hosts_update_many, methods=["POST"]),
         Route("/api/hosts/{id}/update", host_update, methods=["POST"]),
         Route("/api/os-logos", os_logos),
