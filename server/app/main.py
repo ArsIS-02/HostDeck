@@ -20,6 +20,7 @@ from . import db
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 AGENT_DIR = os.environ.get("HOSTDECK_AGENT_DIR", "/agents")   # сюда образ кладёт собранные агенты
+VERSION_RE = re.compile(r"^[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.]+)?$")
 AGENT_FILE = re.compile(r"^hostdeck-agent-(darwin|linux)-(arm64|amd64)$")
 CA_FILE = os.environ.get("HOSTDECK_CA_FILE", "")   # корневой сертификат внутреннего CA, если он есть (отдаётся хостам для установки)
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:\d{1,5})?$")
@@ -349,6 +350,29 @@ HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,met
                "CASE WHEN software IS NULL THEN NULL ELSE json_array_length(software) END AS software_count FROM hosts")
 RANK = {"fail": 3, "warn": 2, "unknown": 1, "ok": 0, "info": 0}
 
+_latest = {"mtime": None, "v": None}
+
+
+def agent_latest():
+    """Версия агентов, лежащих на сервере (файл VERSION рядом с бинарниками; его пишет сборка образа)."""
+    path = os.path.join(AGENT_DIR, "VERSION")
+    try:
+        mt = os.stat(path).st_mtime_ns
+        if _latest["mtime"] != mt:
+            with open(path, encoding="utf-8") as f:
+                v = f.read().strip()
+            _latest["mtime"], _latest["v"] = mt, (v if VERSION_RE.match(v) else None)
+    except OSError:
+        _latest["mtime"], _latest["v"] = None, None
+    return _latest["v"]
+
+
+def vtuple(v):
+    try:
+        return tuple(int(x) for x in str(v).split("-")[0].split("."))
+    except ValueError:
+        return None
+
 
 def summarize(row, detail=False):
     now = time.time()
@@ -377,6 +401,10 @@ def summarize(row, detail=False):
         "software_at": row["software_at"],
         "software_count": row["software_count"],
     }
+    latest = agent_latest()
+    cur, lat = vtuple(row["agent_version"]), vtuple(latest) if latest else None
+    out["agent_latest"] = latest
+    out["update_available"] = bool(cur and lat and cur < lat)
     if detail:
         out["checks"] = (posture or {}).get("checks", [])
     return out
@@ -410,6 +438,51 @@ async def host_refresh(request: Request):
     await queue_for(hid).put({"id": secrets.token_hex(4), "type": "collect"})
     db.audit(u["name"], "refresh", host=hid)
     return JSONResponse({"queued": True})
+
+
+async def queue_update(u, hid):
+    """Ставит хосту команду обновления агента. Возвращает причину отказа или None."""
+    row = db.q1(HOST_SELECT + " WHERE id=?", (hid,))
+    if not row:
+        return "not_found"
+    if summarize(row)["info"].get("auto_update") != "on":
+        return "disabled"
+    await queue_for(hid).put({"id": secrets.token_hex(4), "type": "update"})
+    db.audit(u["name"], "agent-update", host=hid, detail=row["agent_version"] or "")
+    return None
+
+
+async def host_update(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    why = await queue_update(u, request.path_params["id"])
+    if why == "not_found":
+        return err("хост не найден", 404)
+    if why == "disabled":
+        return err("обновление из веб-интерфейса не разрешено на этом хосте (агент установлен без autoupdate)", 409)
+    return JSONResponse({"queued": True})
+
+
+async def hosts_update_many(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    ids = data.get("ids")
+    if not isinstance(ids, list) or not ids or len(ids) > 200 or not all(isinstance(i, str) for i in ids):
+        return err("нужен список идентификаторов хостов (до 200)")
+    queued, skipped = 0, []
+    for hid in dict.fromkeys(ids):
+        why = await queue_update(u, hid)
+        if why is None:
+            queued += 1
+        else:
+            skipped.append({"id": hid, "reason": why})
+    return JSONResponse({"queued": queued, "skipped": skipped})
 
 
 async def host_software(request: Request):
@@ -556,12 +629,35 @@ async def agent_poll(request: Request):
     db.x("UPDATE hosts SET last_seen=? WHERE id=?", (time.time(), hid))
     q = queue_for(hid)
     cmds = []
+    # Ждём команду, но следим за соединением: если агент перезапустился (например, после обновления), его старый запрос
+    # остаётся висеть до таймаута и не должен перехватить команду, которая предназначена уже новому процессу.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + POLL_TIMEOUT
+    getter = asyncio.ensure_future(q.get())
     try:
-        cmds.append(await asyncio.wait_for(q.get(), POLL_TIMEOUT))
+        while not getter.done():
+            left = deadline - loop.time()
+            if left <= 0:
+                break
+            await asyncio.wait({getter}, timeout=min(1.0, left))
+            if not getter.done() and await request.is_disconnected():
+                break
+    except BaseException:
+        # обработчик отменён: команду, которую успели достать из очереди, возвращаем
+        if getter.done() and not getter.cancelled():
+            q.put_nowait(getter.result())
+        raise
+    finally:
+        if not getter.done():
+            getter.cancel()
+    if getter.done() and not getter.cancelled():
+        first = getter.result()
+        if await request.is_disconnected():
+            q.put_nowait(first)   # получателя уже нет: вернуть команду в очередь
+            return JSONResponse({"commands": []})
+        cmds.append(first)
         while not q.empty() and len(cmds) < 20:
             cmds.append(q.get_nowait())
-    except asyncio.TimeoutError:
-        pass
     db.x("UPDATE hosts SET last_seen=? WHERE id=?", (time.time(), hid))
     return JSONResponse({"commands": cmds})
 
@@ -580,6 +676,9 @@ async def agent_report(request: Request):
         d = data.get("data")
         if not isinstance(d, dict) or len(json.dumps(d)) > 200_000:
             return err("некорректные данные")
+        new_v = str(data.get("version") or "")[:40]
+        if new_v and host["agent_version"] and new_v != host["agent_version"]:
+            db.audit("agent", "agent-updated", host=host["id"], detail=f"{host['agent_version']} → {new_v}")
         db.x("UPDATE hosts SET posture=?, posture_at=?, last_seen=?, agent_version=COALESCE(?,agent_version), os=COALESCE(?,os) WHERE id=?",
              (json.dumps(d, ensure_ascii=False), now, now, data.get("version"), data.get("os"), host["id"]))
         return JSONResponse({"ok": True})
@@ -601,6 +700,11 @@ async def agent_report(request: Request):
         db.x("UPDATE hosts SET software=?, software_at=?, last_seen=? WHERE id=?",
              (json.dumps(clean, ensure_ascii=False), now, now, host["id"]))
         return JSONResponse({"ok": True, "count": len(clean)})
+    if kind == "event":
+        ev = str(data.get("event", ""))
+        if ev in ("update-failed", "update-current"):
+            db.audit("agent", "agent-" + ev, host=host["id"], detail=str(data.get("message", ""))[:300])
+            return JSONResponse({"ok": True})
     return err("неизвестный тип отчёта")
 
 
@@ -685,17 +789,35 @@ async def index(request: Request):
     return FileResponse(os.path.join(STATIC, "index.html"))
 
 
-async def security_headers(request: Request, call_next):
-    resp = await call_next(request)
-    resp.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
-    resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["Referrer-Policy"] = "no-referrer"
-    resp.headers["Cache-Control"] = "no-store" if request.url.path.startswith(("/api", "/agent")) else "no-cache"
-    return resp
+class SecurityHeaders:
+    """Заголовки безопасности. Чистый ASGI-слой, а не BaseHTTPMiddleware: тот скрывает от обработчиков разрыв соединения
+    (request.is_disconnected()), а он нужен длинному опросу агентов."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        path = scope.get("path", "")
+
+        async def send_wrap(message):
+            if message["type"] == "http.response.start":
+                headers = [(k, v) for k, v in message.get("headers", []) if k.lower() not in
+                           (b"content-security-policy", b"x-content-type-options", b"referrer-policy", b"cache-control")]
+                headers += [
+                    (b"content-security-policy", b"default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"),
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"referrer-policy", b"no-referrer"),
+                    (b"cache-control", b"no-store" if path.startswith(("/api", "/agent")) else b"no-cache"),
+                ]
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_wrap)
 
 
 from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
 
 
 @asynccontextmanager
@@ -723,6 +845,8 @@ app = Starlette(
         Route("/api/enroll-tokens", token_create, methods=["POST"]),
         Route("/api/audit", audit_list),
         Route("/api/hosts/delete", hosts_delete_many, methods=["POST"]),
+        Route("/api/hosts/update", hosts_update_many, methods=["POST"]),
+        Route("/api/hosts/{id}/update", host_update, methods=["POST"]),
         Route("/api/os-logos", os_logos),
         Route("/install.sh", install_script),
         Route("/dl/{name}", download),
@@ -738,6 +862,6 @@ app = Starlette(
         Route("/api/term/{sid}/close", term_close, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ],
-    middleware=[Middleware(BaseHTTPMiddleware, dispatch=security_headers)],
+    middleware=[Middleware(SecurityHeaders)],
     lifespan=lifespan,
 )

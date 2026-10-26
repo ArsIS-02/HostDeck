@@ -12,7 +12,8 @@ with socket.socket() as s:
 pw = secrets.token_urlsafe(12)
 CAF = os.path.join(tmp, "ca.pem")
 open(CAF, "w").write("-----BEGIN CERTIFICATE-----\ntest-only\n-----END CERTIFICATE-----\n")
-env = dict(os.environ, HOSTDECK_CA_FILE=CAF, HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
+os.makedirs(os.path.join(tmp, "agents")); open(os.path.join(tmp, "agents", "VERSION"), "w").write("0.5.0\n")
+env = dict(os.environ, HOSTDECK_AGENT_DIR=os.path.join(tmp, "agents"), HOSTDECK_CA_FILE=CAF, HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
 subprocess.run([sys.executable, os.path.join(ROOT, "tests/seed_demo.py")], env=env, check=True, capture_output=True)
 srv = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT), "--log-level", "warning"], cwd=os.path.join(ROOT, "server"), env=env)
 B = f"http://127.0.0.1:{PORT}"
@@ -87,7 +88,13 @@ try:
                 pg.focus(".check.s-ok .badge"); pg.wait_for_selector(".tip.on")
                 ok("nothing to change" in pg.inner_text(".tip"), "подсказка по клавиатуре (фокус), для «в порядке» — без лишних шагов")
                 pg.keyboard.press("Escape"); pg.wait_for_selector(".tip", state="detached")
+                # обновление агента из веб-интерфейса
+                ok(pg.locator(".chip.c-warn", has_text="Version 0.5.0 available").count() == 1, "в шапке хоста метка «доступна версия 0.5.0»")
+                pg.click("button:has-text('Update agent')"); pg.wait_for_selector("text=download the new agent")
+                pg.locator(".veil").get_by_role("button", name="Update", exact=True).click(); pg.wait_for_selector("text=Update requested: 1")
+                ok(True, "кнопка «Обновить агента»: подтверждение и отправка команды")
                 pg.goto(B + "/#/audit"); pg.wait_for_selector(".log-row")
+                ok("Agent update requested" in pg.inner_text(".page"), "журнал: «Запрошено обновление агента»")
                 at = pg.inner_text(".page")
                 ok("Signed in" in at and "First administrator created" in at and "admin-created" not in at and "login" not in at.lower(), "журнал (EN): ленточка с понятными событиями")
                 pg.screenshot(path=f"{OUT}/audit-en-dark.png", full_page=True)

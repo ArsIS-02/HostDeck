@@ -135,7 +135,7 @@ button, input { font: inherit; color: inherit; }
 .badge:not(:has(span)) { padding: 3px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--seg); color: var(--muted); font-size: 12.5px; }
-.chip.c-ok { background: var(--ok-bg); color: var(--ok); } .chip.c-off { background: var(--unk-bg); color: var(--unk); }
+.chip.c-warn { background: var(--warn-bg); color: var(--warn); } .chip.c-ok { background: var(--ok-bg); color: var(--ok); } .chip.c-off { background: var(--unk-bg); color: var(--unk); }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--g-none); } .dot.on { background: var(--g-ok); box-shadow: 0 0 0 3px var(--ok-bg); }
 
 /* индикатор-полоса */

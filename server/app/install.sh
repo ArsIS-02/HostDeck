@@ -6,6 +6,8 @@
 #
 # Переменные окружения (ставятся перед bash: sudo HOSTDECK_TERMINAL=1 bash -s -- ...):
 #   HOSTDECK_TERMINAL=1   разрешить root-консоль из веб-интерфейса на этом хосте (по умолчанию выключено)
+#   HOSTDECK_AUTOUPDATE=1 разрешить серверу обновлять этого агента по кнопке в веб-интерфейсе (0 — запретить; не задано —
+#                         оставить как есть). Обновление заменяет программу, работающую от root, поэтому по умолчанию выключено
 #   HOSTDECK_CA=/путь     корневой сертификат (PEM), если сервер подписан внутренним CA. Он используется только
 #                         агентом HostDeck (сохраняется рядом с его конфигом), в системное хранилище не добавляется
 #   HOSTDECK_BIN=/путь    взять агент из файла, а не скачивать
@@ -69,7 +71,10 @@ if [ -n "$TOKEN" ]; then
   ARGS=(enroll -server "$SERVER" -token "$TOKEN" -name "$NAME")
   [ -n "$CA" ] && ARGS+=(-ca "$CA")
   [ "${HOSTDECK_TERMINAL:-0}" = 1 ] && ARGS+=(-terminal)   # root-консоль включается только явно
+  [ "${HOSTDECK_AUTOUPDATE:-0}" = 1 ] && ARGS+=(-autoupdate)   # обновление из веба тоже только явно
   /usr/local/bin/hostdeck-agent "${ARGS[@]}"
+elif [ -n "${HOSTDECK_AUTOUPDATE:-}" ]; then
+  case "$HOSTDECK_AUTOUPDATE" in 1) /usr/local/bin/hostdeck-agent set -autoupdate on;; 0) /usr/local/bin/hostdeck-agent set -autoupdate off;; esac
 fi
 
 if [ "$OS" = darwin ]; then

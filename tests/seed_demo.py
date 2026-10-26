@@ -48,7 +48,7 @@ for i, (name, model, chip, mem, ver, st, m) in enumerate(HOSTS):
             if c["id"] == "disk":
                 c.update(status="fail", num=91.0, detail="43.0")
     posture = {"collected_at": now, "info": {"os": "macOS" if mac else "linux", "os_version": ver, "model": model or "Raspberry Pi 4B", "chip": chip,
-               "memory": mem, "arch": "arm64", "hostname": name, "agent": "0.2.0", "boot_time": str(int(now - 86400 * (3 + i))), "console_user": "arsentyev" if mac else ""},
+               "memory": mem, "arch": "arm64", "hostname": name, "agent": "0.2.0", "boot_time": str(int(now - 86400 * (3 + i))), "console_user": "arsentyev" if mac else "", **({"auto_update": "on"} if i != 3 else {})},
                "checks": ck if mac else [{"id": "platform", "status": "info", "value": "mac_only"}, ck[-1]]}
     tot = float(mem.split()[0]) * 2**30
     metrics = {"at": now, "cpu": m["cpu"], "load1": m["cpu"] / 100 * 8, "cores": 8, "mem_used": tot * m["mu"], "mem_total": tot, "swap_pct": 12 * i,

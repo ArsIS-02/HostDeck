@@ -5,7 +5,8 @@ COPY agent/ ./
 RUN set -e; mkdir /agents; \
     for t in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do \
       CGO_ENABLED=0 GOOS=${t%-*} GOARCH=${t#*-} go build -trimpath -ldflags "-s -w" -o /agents/hostdeck-agent-$t . ; \
-    done
+    done; \
+    go run . version > /agents/VERSION
 
 # Этап 2: сервер
 FROM docker.io/library/python:3.13-slim

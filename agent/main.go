@@ -16,7 +16,8 @@ import (
 func usage() {
 	fmt.Fprintf(os.Stderr, `hostdeck-agent %s
 
-  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-config путь]
+  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-autoupdate] [-config путь]
+  hostdeck-agent set -autoupdate on|off [-config путь]   # разрешить или запретить обновление из веб-интерфейса
   hostdeck-agent run [-config путь]
   hostdeck-agent collect        # один раз собрать состояние и вывести JSON (для проверки)
   hostdeck-agent version
@@ -42,6 +43,8 @@ func main() {
 		cmdEnroll(os.Args[2:])
 	case "run":
 		cmdRun(os.Args[2:])
+	case "set":
+		cmdSet(os.Args[2:])
 	default:
 		usage()
 	}
@@ -60,6 +63,7 @@ func cmdEnroll(args []string) {
 	name := fs.String("name", "", "имя хоста (по умолчанию hostname)")
 	ca := fs.String("ca", "", "файл корневого сертификата (PEM), если сервер подписан своим CA")
 	terminal := fs.Bool("terminal", false, "разрешить root-консоль из веб-интерфейса (по умолчанию выключено)")
+	autoupd := fs.Bool("autoupdate", false, "разрешить обновление агента из веб-интерфейса (по умолчанию выключено)")
 	cfgPath := fs.String("config", defaultConfigPath(), "путь к конфигу")
 	_ = fs.Parse(args)
 	if *server == "" || *token == "" {
@@ -81,7 +85,7 @@ func cmdEnroll(args []string) {
 	if err := c.post(ctx, "/agent/enroll", map[string]string{"token": *token, "name": *name, "os": osName(), "version": version}, &r); err != nil {
 		log.Fatalf("регистрация не удалась: %v", err)
 	}
-	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15, AllowTerminal: *terminal}
+	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15, AllowTerminal: *terminal, AllowUpdate: *autoupd}
 	if err := saveConfig(*cfgPath, cfg); err != nil {
 		log.Fatalf("не удалось сохранить конфиг: %v", err)
 	}
@@ -104,6 +108,7 @@ func cmdRun(args []string) {
 	defer stop()
 	os_ := osName()
 	allowTerminal = cfg.AllowTerminal
+	allowUpdate = cfg.AllowUpdate
 	allowedPorts = cfg.AllowedPorts
 	defer closeAllTerms()
 	if allowTerminal {
@@ -193,6 +198,8 @@ func cmdRun(args []string) {
 				go send()
 			case "software":
 				go sendSoftware()
+			case "update":
+				go handleUpdate(ctx, c)
 			case "term_open":
 				go termOpen(ctx, c, cmd.SID, cmd.Cols, cmd.Rows)
 			case "term_in":
@@ -206,4 +213,30 @@ func cmdRun(args []string) {
 			}
 		}
 	}
+}
+
+// cmdSet меняет настройки уже зарегистрированного агента (без повторной регистрации).
+func cmdSet(args []string) {
+	fs := flag.NewFlagSet("set", flag.ExitOnError)
+	cfgPath := fs.String("config", defaultConfigPath(), "путь к конфигу")
+	au := fs.String("autoupdate", "", "on или off: обновление агента из веб-интерфейса")
+	_ = fs.Parse(args)
+	cfg, err := loadConfig(*cfgPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	switch *au {
+	case "on":
+		cfg.AllowUpdate = true
+	case "off":
+		cfg.AllowUpdate = false
+	case "":
+		usage()
+	default:
+		log.Fatalf("autoupdate: ожидается on или off, получено %q", *au)
+	}
+	if err := saveConfig(*cfgPath, cfg); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("обновление из веб-интерфейса: %s\n", *au)
 }

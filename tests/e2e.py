@@ -11,7 +11,17 @@ B = f"http://127.0.0.1:{PORT}"
 pw = secrets.token_urlsafe(12)
 CAF = os.path.join(tmp, "ca.pem")
 open(CAF, "w").write("-----BEGIN CERTIFICATE-----\ntest-only\n-----END CERTIFICATE-----\n")
-env = dict(os.environ, HOSTDECK_CA_FILE=CAF, HOSTDECK_AGENT_DIR=os.path.join(ROOT, "dist"), HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
+# каталог агентов сервера: готовые сборки из dist, а для платформы теста — проверяемый агент и файл VERSION
+import platform, shutil
+AGDIR = os.path.join(tmp, "agents"); os.makedirs(AGDIR)
+for f in os.listdir(os.path.join(ROOT, "dist")):
+    if f.startswith("hostdeck-agent-") and f.rsplit("-", 2)[-2:][0] in ("darwin", "linux") and not f.endswith("test"):
+        shutil.copy(os.path.join(ROOT, "dist", f), AGDIR)
+NATIVE = "hostdeck-agent-linux-" + {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine(), "amd64")
+shutil.copy(AGENT, os.path.join(AGDIR, NATIVE))
+NEWV = subprocess.run([AGENT, "version"], capture_output=True, text=True).stdout.strip()
+open(os.path.join(AGDIR, "VERSION"), "w").write(NEWV + "\n")
+env = dict(os.environ, HOSTDECK_CA_FILE=CAF, HOSTDECK_AGENT_DIR=AGDIR, HOSTDECK_DB=os.path.join(tmp, "t.db"), HOSTDECK_ADMIN_PASSWORD=pw)
 srv = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(PORT), "--log-level", "warning"],
                        cwd=os.path.join(ROOT, "server"), env=env)
 for _ in range(50):
@@ -186,6 +196,54 @@ res.append(ok(call("/api/hosts/delete","POST",{"ids":[]})[0]==400 and call("/api
 s,dd,_=call("/api/hosts/delete","POST",{"ids":ids+["несуществующий"]})
 res.append(ok(s==200 and dd.get("deleted")==2,"массовое удаление: удалено 2, лишний id пропущен"))
 res.append(ok(cx.execute("SELECT COUNT(*) FROM hosts WHERE name LIKE 'bulk-%'").fetchone()[0]==0,"массовое удаление: в базе хостов не осталось"))
+
+# --- обновление агентов из веб-интерфейса ---
+import signal
+old_dir=os.path.join(tmp,"old"); os.makedirs(old_dir)
+OLD=os.path.join(old_dir,"hostdeck-agent")
+b=subprocess.run(["go","build","-ldflags","-X main.version=0.0.1","-o",OLD,"."],cwd=os.path.join(ROOT,"agent"),capture_output=True,text=True)
+res.append(ok(b.returncode==0,"собран «старый» агент 0.0.1 (%s)"%b.stderr.strip()[:100]))
+loops=[]
+def start(name,extra):
+    s,t,_=call("/api/enroll-tokens","POST",{"label":name})
+    cf=os.path.join(tmp,name+".json")
+    subprocess.run([OLD,"enroll","-server",B,"-token",t["token"],"-name",name,"-config",cf]+extra,capture_output=True)
+    # «служба»: перезапускает агента после выхода, как это делают systemd и launchd
+    lg=open(os.path.join(tmp,name+".log"),"w")
+    p=subprocess.Popen(["bash","-c",f'while true; do "{OLD}" run -config "{cf}"; sleep 1; done'],stdout=lg,stderr=subprocess.STDOUT,start_new_session=True)
+    loops.append(p)
+def host(name):
+    return [h for h in call("/api/hosts")[1] if h["name"]==name][0]
+start("upd-on",["-autoupdate"]); start("upd-off",[])
+time.sleep(5)
+h_on,h_off=host("upd-on"),host("upd-off")
+res.append(ok(h_on["agent_version"]=="0.0.1" and h_on["update_available"] and h_on["agent_latest"]==NEWV,"сервер видит устаревшего агента: 0.0.1 → %s"%NEWV))
+res.append(ok(h_on["info"].get("auto_update")=="on" and not h_off["info"].get("auto_update"),"хост сообщает, разрешено ли обновление"))
+res.append(ok(call("/api/hosts/"+h_off["id"]+"/update","POST",{})[0]==409,"обновление хоста без разрешения отклонено (409)"))
+res.append(ok(call("/api/hosts/nonexistent/update","POST",{})[0]==404,"обновление несуществующего хоста -> 404"))
+s,r,_=call("/api/hosts/update","POST",{"ids":[h_on["id"],h_off["id"]]})
+res.append(ok(s==200 and r["queued"]==1 and r["skipped"]==[{"id":h_off["id"],"reason":"disabled"}],"массовое обновление: 1 поставлено, 1 пропущен"))
+res.append(ok(call("/api/hosts/update","POST",{"ids":[]})[0]==400,"массовое обновление: пустой список отклонён"))
+for _ in range(40):
+    time.sleep(1)
+    if host("upd-on")["agent_version"]==NEWV: break
+h_on=host("upd-on")
+res.append(ok(h_on["agent_version"]==NEWV and not h_on["update_available"],"агент обновил себя сам: версия %s"%h_on["agent_version"]))
+res.append(ok(hashlib.sha256(open(OLD,"rb").read()).hexdigest()==hashlib.sha256(open(AGENT,"rb").read()).hexdigest(),"файл агента заменён на скачанный и проверенный"))
+res.append(ok(os.path.exists(OLD+".prev"),"прежняя версия сохранена рядом (.prev)"))
+res.append(ok(host("upd-off")["agent_version"]=="0.0.1","хост без разрешения не обновился"))
+s,au3,_=call("/api/audit")
+acts3=[(r["action"],r["host"]) for r in au3["rows"]]
+res.append(ok(("agent-update",h_on["id"]) in acts3 and ("agent-updated",h_on["id"]) in acts3,"журнал: запрос обновления и успешное обновление"))
+call("/api/hosts/"+h_on["id"]+"/update","POST",{})
+time.sleep(4)
+s,au4,_=call("/api/audit")
+res.append(ok(any(r["action"]=="agent-update-current" and r["host"]==h_on["id"] for r in au4["rows"]),"повторное обновление: «уже последняя версия» попало в журнал"))
+if not res[-1]:
+    print("DEBUG журнал:",[(r["action"],r["detail"]) for r in au4["rows"][:8]]); print("DEBUG лог агента:\n"+open(os.path.join(tmp,"upd-on.log")).read()[-1500:])
+for p in loops:
+    try: os.killpg(p.pid,signal.SIGKILL)
+    except Exception: pass
 time.sleep(30)
 res.append(ok(ag.poll() is not None,"после удаления хоста агент завершился (401)"))
 ag.terminate()

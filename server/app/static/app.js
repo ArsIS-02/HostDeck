@@ -365,8 +365,27 @@
     bulkBox.replaceChildren(...(n > 0 ? [el("div", { class: "bulk" }, el("span", { class: "bulk-n" }, T("hosts.selected", { n })),
       me.role !== "viewer" ? button(T("hosts.refresh.sel"), { icon: "refresh", onclick: bulkRefresh }) : null,
       button(T("hosts.export.sel"), { icon: "download", onclick: () => exportFleet(hosts.filter((h) => selected.has(h.id))) }),
+      me.role === "admin" ? button(T("hosts.update.sel"), { icon: "refresh", onclick: () => updateAgents(hosts.filter((h) => selected.has(h.id))) }) : null,
       me.role === "admin" ? button(T("hosts.delete.sel"), { icon: "trash", kind: "danger-ghost", onclick: () => deleteHosts(hosts.filter((h) => selected.has(h.id))) }) : null,
       button("", { icon: "x", kind: "ghost", title: T("common.cancel"), onclick: () => { selected.clear(); drawHosts(); } }))] : []));
+  }
+  // Обновление агентов с веб-интерфейса: сервер ставит хостам команду, а хост скачивает нового агента с сервера, сверяет сумму и перезапускается.
+  // Работает только на хостах, где обновление разрешено при установке (флаг HOSTDECK_AUTOUPDATE=1).
+  async function updateAgents(list) {
+    if (!list.length) return;
+    const can = list.filter((h) => (h.info || {}).auto_update === "on"), cannot = list.filter((h) => (h.info || {}).auto_update !== "on");
+    const nm = (l) => el("ul", { class: "del-list" }, l.slice(0, 8).map((h) => el("li", {}, `${h.name} (${h.agent_version || "?"}${h.agent_latest ? " → " + h.agent_latest : ""})`)), l.length > 8 ? el("li", { class: "muted" }, "…") : null);
+    const body = el("div", {},
+      can.length ? el("div", {}, el("p", {}, T("update.body")), nm(can)) : null,
+      cannot.length ? el("div", {}, el("p", { class: "muted" }, T("update.cannot")), nm(cannot), el("pre", { class: "code" }, T("update.enable.cmd"))) : null);
+    if (!can.length) { await dialog({ title: T("update.title"), icon: "download", tone: "info", body, buttons: [{ text: T("common.close"), value: true }] }); return; }
+    const yes = await dialog({ title: T("update.title"), icon: "download", tone: "info", body,
+      buttons: [{ text: T("common.cancel"), value: false }, { text: T("update.ok"), value: true, kind: "primary" }] });
+    if (yes !== true) return;
+    try {
+      const r = await api("/api/hosts/update", { method: "POST", body: { ids: can.map((h) => h.id) } });
+      toast(T("update.queued", { n: r.queued }));
+    } catch (e) { fail(e); }
   }
   async function bulkRefresh() {
     const ids = [...selected];
@@ -419,8 +438,10 @@
   async function addHostDialog() {
     const nameIn = el("input", { class: "input", placeholder: T("add.name"), "aria-label": T("add.name"), maxlength: 60 });
     const termCb = checkbox({ label: T("add.terminal") });
+    const updCb = checkbox({ label: T("add.autoupdate") });
     const body = el("div", { class: "form" }, el("label", { class: "field" }, el("span", {}, T("add.name")), nameIn),
-      el("label", { class: "cb-line" }, termCb, el("span", {}, T("add.terminal"))), el("p", { class: "muted small" }, T("add.token.hint")));
+      el("label", { class: "cb-line" }, termCb, el("span", {}, T("add.terminal"))),
+      el("label", { class: "cb-line" }, updCb, el("span", {}, T("add.autoupdate"))), el("p", { class: "muted small" }, T("add.token.hint")));
     let created = false;
     await dialog({
       title: T("add.title"), icon: "plus", tone: "info", body, wide: true,
@@ -436,7 +457,7 @@
             const caSha = r.install_sha256 ? r.ca_sha256 : null;
             const caCb = caSha ? checkbox({ label: T("add.ca"), checked: true }) : null;
             const build = () => {
-              const o = location.origin, tf = termCb.checked ? "HOSTDECK_TERMINAL=1 " : "";
+              const o = location.origin, tf = (termCb.checked ? "HOSTDECK_TERMINAL=1 " : "") + (updCb.checked ? "HOSTDECK_AUTOUPDATE=1 " : "");
               const tail = `${r.token}${name ? ` ${name}` : ""}`;
               if (caCb && caCb.checked) {
                 // CA и скрипт скачиваются без проверки канала: подлинность доказывают отпечатки из этой (авторизованной) страницы.
@@ -587,8 +608,10 @@
           el("div", { class: "host-title" }, el("h1", {}, h.name), el("div", { class: "muted" }, [x.model, osLine(x), x.chip].filter(Boolean).join(" · "))),
           badge(h.status, T("status." + h.status), 16),
           chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off"),
+          h.update_available ? chip("download", T("host.update.avail", { v: h.agent_latest }), "c-warn") : null,
           el("span", { class: "spacer" }),
           me.role !== "viewer" ? button(T("host.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${id}/refresh`, { method: "POST", body: {} }); toast(T("host.refresh.queued")); } catch (e) { fail(e); } } }) : null,
+          me.role === "admin" ? button(T("host.update"), { icon: "download", kind: h.update_available ? "primary" : "", onclick: () => updateAgents([h]) }) : null,
           me.role === "admin" ? button(T("host.console"), { icon: "terminal", onclick: () => { hostTab = "terminal"; drawHostBody(); } }) : null,
           button(T("host.export"), { icon: "download", onclick: () => exportHost(curHost, swState.hostId === id && swState.items ? swState.items : null) }),
           me.role === "admin" ? button("", { icon: "trash", kind: "danger-ghost", title: T("host.delete"), onclick: async () => {
@@ -710,6 +733,8 @@
     "host-deleted": { ic: "trash", tone: "fail", cat: "hosts" }, "enroll-token-created": { ic: "plus", tone: "info", cat: "hosts" },
     "enroll-rejected": { ic: "x", tone: "fail", cat: "hosts" }, "enrolled": { ic: "check", tone: "ok", cat: "hosts" },
     "admin-created": { ic: "key", tone: "info", cat: "access" },
+    "agent-update": { ic: "download", tone: "info", cat: "hosts" }, "agent-updated": { ic: "check", tone: "ok", cat: "hosts" },
+    "agent-update-failed": { ic: "x", tone: "fail", cat: "hosts" }, "agent-update-current": { ic: "check", tone: "", cat: "hosts" },
   };
   function fmtDur(sec) {
     if (sec < 60) return `${sec} ${T("u.s")}`;

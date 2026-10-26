@@ -17,6 +17,8 @@ type Config struct {
 	IntervalMin int    `json:"interval_min,omitempty"`
 	// AllowTerminal разрешает администратору открывать root-консоль из веб-интерфейса. По умолчанию выключено.
 	AllowTerminal bool `json:"allow_terminal,omitempty"`
+	// AllowUpdate разрешает серверу обновлять агента по команде из веб-интерфейса. По умолчанию выключено.
+	AllowUpdate bool `json:"allow_update,omitempty"`
 	// AllowedPorts — порты, которым разрешено слушать на внешних адресах. Всё остальное проверка «Открытые порты» считает лишним.
 	AllowedPorts []int `json:"allowed_ports,omitempty"`
 }

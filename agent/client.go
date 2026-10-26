@@ -148,3 +148,9 @@ func (c *Client) reportTermExit(ctx context.Context, sid string, code int) error
 	defer cancel()
 	return c.post(ctx, "/agent/term", map[string]any{"sid": sid, "exit": true, "code": code}, nil)
 }
+
+func (c *Client) reportEvent(ctx context.Context, kind, msg string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	return c.post(ctx, "/agent/report", map[string]any{"kind": "event", "event": kind, "message": msg, "version": version}, nil)
+}
