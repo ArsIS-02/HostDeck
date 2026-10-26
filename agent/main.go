@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -16,8 +17,8 @@ import (
 func usage() {
 	fmt.Fprintf(os.Stderr, `hostdeck-agent %s
 
-  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-autoupdate] [-config путь]
-  hostdeck-agent set -autoupdate on|off [-config путь]   # разрешить или запретить обновление из веб-интерфейса
+  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-autoupdate] [-update-key КЛЮЧ] [-config путь]
+  hostdeck-agent set [-autoupdate on|off] [-update-key КЛЮЧ|off] [-config путь]   # обновление из веб-интерфейса и ключ подписи обновлений
   hostdeck-agent probe [-o файл] [-raw]                  # собрать сырые выводы команд для отладки проверок (запускать через sudo)
   hostdeck-agent run [-config путь]
   hostdeck-agent collect        # один раз собрать состояние и вывести JSON (для проверки)
@@ -67,8 +68,14 @@ func cmdEnroll(args []string) {
 	ca := fs.String("ca", "", "файл корневого сертификата (PEM), если сервер подписан своим CA")
 	terminal := fs.Bool("terminal", false, "разрешить root-консоль из веб-интерфейса (по умолчанию выключено)")
 	autoupd := fs.Bool("autoupdate", false, "разрешить обновление агента из веб-интерфейса (по умолчанию выключено)")
+	ukey := fs.String("update-key", "", "открытый ключ Ed25519 (base64): обновлять только из списка с подписью этого ключа")
 	cfgPath := fs.String("config", defaultConfigPath(), "путь к конфигу")
 	_ = fs.Parse(args)
+	if *ukey != "" {
+		if _, err := parseKey(*ukey); err != nil {
+			log.Fatal(err)
+		}
+	}
 	if *server == "" || *token == "" {
 		usage()
 	}
@@ -88,7 +95,7 @@ func cmdEnroll(args []string) {
 	if err := c.post(ctx, "/agent/enroll", map[string]string{"token": *token, "name": *name, "os": osName(), "version": version}, &r); err != nil {
 		log.Fatalf("регистрация не удалась: %v", err)
 	}
-	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15, AllowTerminal: *terminal, AllowUpdate: *autoupd}
+	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15, AllowTerminal: *terminal, AllowUpdate: *autoupd, UpdateKey: strings.TrimSpace(*ukey)}
 	if err := saveConfig(*cfgPath, cfg); err != nil {
 		log.Fatalf("не удалось сохранить конфиг: %v", err)
 	}
@@ -112,6 +119,7 @@ func cmdRun(args []string) {
 	os_ := osName()
 	allowTerminal = cfg.AllowTerminal
 	allowUpdate = cfg.AllowUpdate
+	updateKey = cfg.UpdateKey
 	allowedPorts = cfg.AllowedPorts
 	defer closeAllTerms()
 	if allowTerminal {
@@ -223,7 +231,11 @@ func cmdSet(args []string) {
 	fs := flag.NewFlagSet("set", flag.ExitOnError)
 	cfgPath := fs.String("config", defaultConfigPath(), "путь к конфигу")
 	au := fs.String("autoupdate", "", "on или off: обновление агента из веб-интерфейса")
+	uk := fs.String("update-key", "", "открытый ключ подписи обновлений (base64) или off, чтобы снять")
 	_ = fs.Parse(args)
+	if *au == "" && *uk == "" {
+		usage()
+	}
 	cfg, err := loadConfig(*cfgPath)
 	if err != nil {
 		log.Fatal(err)
@@ -234,12 +246,26 @@ func cmdSet(args []string) {
 	case "off":
 		cfg.AllowUpdate = false
 	case "":
-		usage()
 	default:
 		log.Fatalf("autoupdate: ожидается on или off, получено %q", *au)
+	}
+	switch *uk {
+	case "":
+	case "off":
+		cfg.UpdateKey = ""
+	default:
+		if _, err := parseKey(*uk); err != nil {
+			log.Fatal(err)
+		}
+		cfg.UpdateKey = strings.TrimSpace(*uk)
 	}
 	if err := saveConfig(*cfgPath, cfg); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("обновление из веб-интерфейса: %s\n", *au)
+	if *au != "" {
+		fmt.Printf("обновление из веб-интерфейса: %s\n", *au)
+	}
+	if *uk != "" {
+		fmt.Printf("ключ подписи обновлений: %s\n", map[bool]string{true: "снят", false: "закреплён"}[*uk == "off"])
+	}
 }

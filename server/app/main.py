@@ -1089,7 +1089,16 @@ async def ca_pem(request: Request):
 
 async def download(request: Request):
     name = request.path_params["name"]
+    signed = os.path.join(AGENT_DIR, "SHA256SUMS.sig")
+    static_sums = os.path.join(AGENT_DIR, "SHA256SUMS")
+    if name == "SHA256SUMS.sig":
+        # подпись, сделанная вне сервера ключом, которого сервер не знает (см. docs/lab-notes.md, «Подпись обновлений»)
+        if os.path.isfile(signed):
+            return FileResponse(signed, media_type="text/plain")
+        return err("подписи нет", 404)
     if name == "SHA256SUMS":
+        if os.path.isfile(signed) and os.path.isfile(static_sums):
+            return FileResponse(static_sums, media_type="text/plain")  # ровно тот файл, который подписан
         text = agent_sums()
         return PlainTextResponse(text) if text else err("агенты не найдены на сервере", 404)
     if not AGENT_FILE.match(name):

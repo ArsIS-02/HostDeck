@@ -1,5 +1,9 @@
+# AGENTS=built  — агенты собираются в образе, SHA256SUMS сервер считает сам (по умолчанию);
+# AGENTS=signed — берутся готовые из dist/ после `make release` (с подписью SHA256SUMS.sig).
+ARG AGENTS=built
+
 # Этап 1: сборка агентов под macOS и Linux (статические бинарники без CGO)
-FROM docker.io/library/golang:1.24 AS agents
+FROM docker.io/library/golang:1.24 AS agents-built
 WORKDIR /src
 COPY agent/ ./
 RUN set -e; mkdir /agents; \
@@ -7,6 +11,11 @@ RUN set -e; mkdir /agents; \
       CGO_ENABLED=0 GOOS=${t%-*} GOARCH=${t#*-} go build -trimpath -ldflags "-s -w" -o /agents/hostdeck-agent-$t . ; \
     done; \
     go run . version > /agents/VERSION
+
+FROM docker.io/library/busybox:1.36 AS agents-signed
+COPY dist/hostdeck-agent-* dist/VERSION dist/SHA256SUMS dist/SHA256SUMS.sig /agents/
+
+FROM agents-${AGENTS} AS agents
 
 # Этап 2: сервер
 FROM docker.io/library/python:3.13-slim

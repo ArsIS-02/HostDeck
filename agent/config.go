@@ -19,6 +19,8 @@ type Config struct {
 	AllowTerminal bool `json:"allow_terminal,omitempty"`
 	// AllowUpdate разрешает серверу обновлять агента по команде из веб-интерфейса. По умолчанию выключено.
 	AllowUpdate bool `json:"allow_update,omitempty"`
+	// UpdateKey — закреплённый открытый ключ подписи обновлений (Ed25519, base64). Сервер сменить его не может.
+	UpdateKey string `json:"update_key,omitempty"`
 	// AllowedPorts — порты, которым разрешено слушать на внешних адресах. Всё остальное проверка «Открытые порты» считает лишним.
 	AllowedPorts []int `json:"allowed_ports,omitempty"`
 }

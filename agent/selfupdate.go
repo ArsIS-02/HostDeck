@@ -71,6 +71,9 @@ func selfUpdate(ctx context.Context, c *Client) (string, bool, error) {
 	if err != nil {
 		return "", false, fmt.Errorf("список контрольных сумм: %w", err)
 	}
+	if err := checkSignedSums(ctx, c, sums); err != nil {
+		return "", false, err
+	}
 	want := sumFor(string(sums), file)
 	if want == "" {
 		return "", false, fmt.Errorf("в SHA256SUMS нет %s", file)
@@ -112,6 +115,10 @@ func selfUpdate(ctx context.Context, c *Client) (string, bool, error) {
 	}
 	if nv == version {
 		return nv, false, nil
+	}
+	// с закреплённым ключом откат на более старую (хотя и подписанную) версию запрещён: иначе её можно подсунуть через сервер
+	if updateKey != "" && cmpVersion(nv, version) < 0 {
+		return "", false, fmt.Errorf("понижение версии %s → %s запрещено при проверке подписи", version, nv)
 	}
 	prev := exe + ".prev"
 	_ = os.Remove(prev)

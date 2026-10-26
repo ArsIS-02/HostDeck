@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var version = "0.6.1"
+var version = "0.6.2"
 
 // Posture — снимок состояния хоста, который уходит на сервер.
 type Posture struct {
@@ -44,6 +44,9 @@ func collect() Posture {
 	}
 	if allowUpdate {
 		p.Info["auto_update"] = "on"
+	}
+	if updateKey != "" {
+		p.Info["update_sign"] = "on"
 	}
 	p.Checks = append(p.Checks, diskCheck("/"))
 	return p

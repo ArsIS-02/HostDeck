@@ -6,6 +6,7 @@
 #
 # Переменные окружения (ставятся перед bash: sudo HOSTDECK_TERMINAL=1 bash -s -- ...):
 #   HOSTDECK_TERMINAL=1   разрешить root-консоль из веб-интерфейса на этом хосте (по умолчанию выключено)
+#   HOSTDECK_UPDATE_KEY=КЛЮЧ закрепить открытый ключ подписи обновлений (Ed25519, base64): агент будет обновляться только из подписанного списка
 #   HOSTDECK_AUTOUPDATE=1 разрешить серверу обновлять этого агента по кнопке в веб-интерфейсе (0 — запретить; не задано —
 #                         оставить как есть). Обновление заменяет программу, работающую от root, поэтому по умолчанию выключено
 #   HOSTDECK_CA=/путь     корневой сертификат (PEM), если сервер подписан внутренним CA. Он используется только
@@ -72,9 +73,11 @@ if [ -n "$TOKEN" ]; then
   [ -n "$CA" ] && ARGS+=(-ca "$CA")
   [ "${HOSTDECK_TERMINAL:-0}" = 1 ] && ARGS+=(-terminal)   # root-консоль включается только явно
   [ "${HOSTDECK_AUTOUPDATE:-0}" = 1 ] && ARGS+=(-autoupdate)   # обновление из веба тоже только явно
+  [ -n "${HOSTDECK_UPDATE_KEY:-}" ] && ARGS+=(-update-key "$HOSTDECK_UPDATE_KEY")   # закрепить ключ подписи обновлений
   /usr/local/bin/hostdeck-agent "${ARGS[@]}"
-elif [ -n "${HOSTDECK_AUTOUPDATE:-}" ]; then
-  case "$HOSTDECK_AUTOUPDATE" in 1) /usr/local/bin/hostdeck-agent set -autoupdate on;; 0) /usr/local/bin/hostdeck-agent set -autoupdate off;; esac
+elif [ -n "${HOSTDECK_AUTOUPDATE:-}" ] || [ -n "${HOSTDECK_UPDATE_KEY:-}" ]; then
+  case "${HOSTDECK_AUTOUPDATE:-}" in 1) /usr/local/bin/hostdeck-agent set -autoupdate on;; 0) /usr/local/bin/hostdeck-agent set -autoupdate off;; esac
+  [ -n "${HOSTDECK_UPDATE_KEY:-}" ] && /usr/local/bin/hostdeck-agent set -update-key "$HOSTDECK_UPDATE_KEY"
 fi
 
 if [ "$OS" = darwin ]; then
