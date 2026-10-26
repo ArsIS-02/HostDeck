@@ -27,7 +27,8 @@ func darwinCompliance(p *Posture) {
 	tm, err := run(10*time.Second, "/usr/bin/defaults", "read", "/Library/Preferences/com.apple.TimeMachine")
 	last, configured := parseTimeMachine(tm)
 	if err != nil || !configured {
-		add(Check{ID: "timemachine", Status: "warn", Value: "not_configured"})
+		// на Mac mini-сервере без Time Machine — осознанный выбор: справка, не замечание
+		add(Check{ID: "timemachine", Status: "info", Value: "not_configured"})
 	} else {
 		if last == 0 {
 			if o, e := run(20*time.Second, "/usr/bin/tmutil", "latestbackup"); e == nil {
@@ -39,7 +40,7 @@ func darwinCompliance(p *Posture) {
 		age := time.Since(time.Unix(last, 0))
 		switch {
 		case last == 0:
-			add(Check{ID: "timemachine", Status: "warn", Value: "no_backups"})
+			add(Check{ID: "timemachine", Status: "info", Value: "no_backups"})
 		case age > 30*24*time.Hour:
 			add(Check{ID: "timemachine", Status: "fail", Value: "backup_at", Num: float64(last)})
 		case age > 7*24*time.Hour:
@@ -82,9 +83,15 @@ func darwinCompliance(p *Posture) {
 	}
 
 	// --- общий доступ ---
+	// onStatus — как оценивать «включено»: общий доступ к экрану и удалённое управление на домашних
+	// хостах включают сознательно (удалённая работа), поэтому это справка; доступ к файлам остаётся замечанием.
 	onOff := func(id string, on bool) {
 		if on {
-			add(Check{ID: id, Status: "warn", Value: "on"})
+			st := "warn"
+			if id == "sharing_screen" || id == "sharing_remote" {
+				st = "info"
+			}
+			add(Check{ID: id, Status: st, Value: "on"})
 		} else {
 			add(Check{ID: id, Status: "ok", Value: "off"})
 		}

@@ -94,6 +94,13 @@ try:
                 pg.click("button:has-text('Update agent')"); pg.wait_for_selector("text=download the new agent")
                 pg.locator(".veil").get_by_role("button", name="Update", exact=True).click(); pg.wait_for_selector("text=Update requested: 1")
                 ok(True, "кнопка «Обновить агента»: подтверждение и отправка команды")
+                # агент уже актуален: вместо диалога — уведомление, в шапке метка вместо «null»
+                open(os.path.join(tmp, "agents", "VERSION"), "w").write("0.0.1\n")
+                pg.reload(); pg.wait_for_selector(".host-head")
+                ok(pg.locator(".host-head .chip.c-ok", has_text="Agent is up to date").count() == 1, "в шапке «актуальная версия агента», если обновление не нужно")
+                pg.click("button:has-text('Update agent')"); pg.wait_for_selector("text=already up to date")
+                ok(pg.locator(".veil").count() == 0, "актуальный агент: только уведомление, без диалога")
+                open(os.path.join(tmp, "agents", "VERSION"), "w").write("0.5.0\n")
                 pg.goto(B + "/#/audit"); pg.wait_for_selector(".log-row")
                 ok("Agent update requested" in pg.inner_text(".page"), "журнал: «Запрошено обновление агента»")
                 at = pg.inner_text(".page")

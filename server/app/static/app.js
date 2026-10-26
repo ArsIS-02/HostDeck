@@ -373,6 +373,9 @@
   // Работает только на хостах, где обновление разрешено при установке (флаг HOSTDECK_AUTOUPDATE=1).
   async function updateAgents(list) {
     if (!list.length) return;
+    // все хосты уже на актуальной версии: диалог не нужен, достаточно уведомления
+    if (!list.some((h) => h.update_available)) { toast(T("update.uptodate")); return; }
+    list = list.filter((h) => h.update_available);
     const can = list.filter((h) => (h.info || {}).auto_update === "on"), cannot = list.filter((h) => (h.info || {}).auto_update !== "on");
     const nm = (l) => el("ul", { class: "del-list" }, l.slice(0, 8).map((h) => el("li", {}, `${h.name} (${h.agent_version || "?"}${h.agent_latest ? " → " + h.agent_latest : ""})`)), l.length > 8 ? el("li", { class: "muted" }, "…") : null);
     const body = el("div", {},
@@ -619,7 +622,7 @@
           el("div", { class: "host-title" }, el("h1", {}, h.name), el("div", { class: "muted" }, [x.model, osLine(x), x.chip].filter(Boolean).join(" · "))),
           badge(h.status, T("status." + h.status), 16),
           chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off"),
-          h.update_available ? chip("download", T("host.update.avail", { v: h.agent_latest }), "c-warn") : null,
+          h.update_available ? chip("download", T("host.update.avail", { v: h.agent_latest }), "c-warn") : (h.agent_version ? chip("check", T("host.update.current"), "c-ok") : null),
           el("span", { class: "spacer" }),
           me.role !== "viewer" ? button(T("host.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${id}/refresh`, { method: "POST", body: {} }); toast(T("host.refresh.queued")); } catch (e) { fail(e); } } }) : null,
           me.role === "admin" ? button(T("host.update"), { icon: "download", kind: h.update_available ? "primary" : "", onclick: () => updateAgents([h]) }) : null,
