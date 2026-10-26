@@ -262,6 +262,7 @@
       el("section", { class: "stats" }, stat("server", c.hosts, T("home.stat.hosts"), "neutral"), stat("check", c.online, T("home.stat.online"), "ok"),
         stat("alert", c.warn, T("home.stat.warn"), "warn"), stat("x", c.fail, T("home.stat.problems"), "fail")),
       expiringCard(),
+      me.role === "admin" ? backupCard() : null,
       el("h2", { class: "sec" }, T("home.how.title")), el("section", { class: "grid3" }, how),
       el("section", { class: "split" },
         el("div", { class: "card" }, el("h2", { class: "sec in" }, T("home.start.title")),
@@ -401,6 +402,29 @@
     if (!yes) return;
     try { const r = await api("/api/hosts/exceptions", { method: "POST", body: { ids: list.map((h) => h.id), check: chk.value, reason: reason.value, days: Number(days.value) || null } }); toast(T("bulk.done", { n: r.updated })); try { hosts = await api("/api/hosts"); } catch (_) { /* список обновится при следующем опросе */ } drawHosts(); } catch (e) { fail(e); }
   }
+  // Резервная копия базы: скачать и проверить, что копия открывается и совпадает с рабочей
+  function backupCard() {
+    const msg = el("p", { class: "muted small", role: "status" });
+    const dl = button(T("bak.download"), { icon: "download", onclick: async () => {
+      try {
+        const r = await fetch("/api/backup", { credentials: "same-origin" });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+        const blob = await r.blob(), a = el("a", { href: URL.createObjectURL(blob), download: (r.headers.get("content-disposition") || "").match(/filename="?([^";]+)/)?.[1] || "hostdeck.db" });
+        document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        msg.textContent = T("bak.saved");
+      } catch (e) { fail(e); }
+    } });
+    const ck = button(T("bak.check"), { icon: "check", onclick: async () => {
+      msg.textContent = T("common.loading");
+      try {
+        const r = await api("/api/backup/check", { method: "POST", body: {} });
+        msg.textContent = r.ok ? T("bak.ok", { s: Math.max(1, Math.round(r.size / 1024)), h: r.counts.hosts, u: r.counts.users }) : T("bak.bad", { i: r.integrity });
+        toast(r.ok ? T("bak.ok.short") : T("bak.bad.short"));
+      } catch (e) { msg.textContent = ""; fail(e); }
+    } });
+    return el("section", { class: "card" }, el("h2", { class: "sec in" }, T("bak.title")), el("p", { class: "muted small" }, T("bak.sub")), el("div", { class: "hero-cta" }, dl, ck), msg);
+  }
+
   // Обзор: исключения, срок которых истекает или истёк, чтобы замечание не вернулось неожиданно
   function expiringCard() {
     const box = el("section", { class: "card exp", hidden: true });

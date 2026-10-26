@@ -647,6 +647,57 @@ async def report_data(request: Request):
     return JSONResponse({"generated": now, "hosts": hosts})
 
 
+
+def _make_backup():
+    import tempfile
+    fd, path = tempfile.mkstemp(prefix="hostdeck-backup-", suffix=".db")
+    os.close(fd)
+    os.chmod(path, 0o600)
+    db.backup_to(path)
+    return path
+
+
+async def backup_download(request: Request):
+    """Копия базы: учётные записи, хосты, история, журнал. Содержит хэши паролей и ключей агентов, поэтому только администратору."""
+    u, e = need(request, "admin")
+    if e:
+        return e
+    path = await asyncio.to_thread(_make_backup)
+    db.audit(u["name"], "backup-download", detail=f"{os.path.getsize(path)} байт")
+    name = "hostdeck-%s.db" % time.strftime("%Y%m%d-%H%M")
+
+    def cleanup():
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    from starlette.background import BackgroundTask
+    return FileResponse(path, media_type="application/octet-stream", filename=name, background=BackgroundTask(cleanup),
+                        headers={"Cache-Control": "no-store"})
+
+
+async def backup_check(request: Request):
+    """Делает копию, открывает её отдельно и сверяет с рабочей базой: целостность и число строк в основных таблицах."""
+    u, e = need(request, "admin")
+    if e:
+        return e
+    path = await asyncio.to_thread(_make_backup)
+    try:
+        integrity, tables, counts = await asyncio.to_thread(db.verify_copy, path)
+        live = {t: db.q1(f"SELECT COUNT(*) n FROM {t}")["n"] for t in counts}
+        size = os.path.getsize(path)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    # рабочая база могла получить новые строки за время проверки (журнал, история), поэтому копия не должна быть больше рабочей
+    same = all(counts[t] <= live[t] and live[t] - counts[t] <= 50 for t in counts)
+    ok = integrity == "ok" and same and {"users", "hosts"} <= set(tables)
+    db.audit(u["name"], "backup-check", detail="успешно" if ok else "есть расхождения")
+    return JSONResponse({"ok": ok, "integrity": integrity, "size": size, "tables": len(tables), "counts": counts, "live": live})
+
+
 async def host_profile_set(request: Request):
     u, e = need(request, "operator")
     if e:
@@ -1128,6 +1179,8 @@ app = Starlette(
         Route("/api/hosts/exceptions", hosts_exception_many, methods=["POST"]),
         Route("/api/exceptions", exceptions_list),
         Route("/api/report", report_data),
+        Route("/api/backup", backup_download),
+        Route("/api/backup/check", backup_check, methods=["POST"]),
         Route("/api/hosts/update", hosts_update_many, methods=["POST"]),
         Route("/api/hosts/{id}/update", host_update, methods=["POST"]),
         Route("/api/os-logos", os_logos),

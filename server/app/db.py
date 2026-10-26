@@ -71,6 +71,28 @@ def x(sql, args=()):
         return conn().execute(sql, args)
 
 
+def backup_to(path):
+    """Согласованная копия базы (SQLite backup API): безопасна при работающем сервере и записи в базу."""
+    with _lock:
+        dst = sqlite3.connect(path)
+        try:
+            conn().backup(dst)
+        finally:
+            dst.close()
+
+
+def verify_copy(path):
+    """Открывает копию отдельно и проверяет: целостность, наличие таблиц, число строк в основных таблицах."""
+    c = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+    try:
+        integrity = c.execute("PRAGMA integrity_check").fetchone()[0]
+        tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        counts = {t: c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("users", "hosts", "exceptions", "history", "audit") if t in tables}
+        return integrity, sorted(tables), counts
+    finally:
+        c.close()
+
+
 def reset_for_tests(path):
     global _conn, DB_PATH
     with _lock:

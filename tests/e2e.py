@@ -262,6 +262,17 @@ if bad:
     ck=[c for c in d3["checks"] if c["id"]==cid][0]
     res.append(ok(ck["status"]==ck["raw_status"] and d3["exceptions"]==0,"снятие исключения возвращает статус"))
 call("/api/hosts/"+hid+"/profile","POST",{"profile":"server"})
+# резервная копия базы
+res.append(ok(raw("/api/backup")[0]==401,"копия базы без входа недоступна (401)"))
+with op.open(B+"/api/backup",timeout=30) as resp:
+    bk=resp.read(); bk_name=resp.headers.get("Content-Disposition","")
+bkp=os.path.join(tmp,"restored.db"); open(bkp,"wb").write(bk)
+import sqlite3
+rc=sqlite3.connect(bkp)
+res.append(ok(bk[:15]==b"SQLite format 3" and rc.execute("PRAGMA integrity_check").fetchone()[0]=="ok" and rc.execute("SELECT COUNT(*) FROM hosts").fetchone()[0]==len(call("/api/hosts")[1]) and "hostdeck-" in bk_name,"скачанная копия — рабочая SQLite-база: целостна, хосты на месте"))
+rc.close()
+s,ch,_=call("/api/backup/check","POST",{})
+res.append(ok(s==200 and ch["ok"] and ch["integrity"]=="ok" and ch["counts"]["hosts"]==ch["live"]["hosts"],"проверка копии: исправна и совпадает с рабочей базой"))
 # групповые операции
 ids_all=[h["id"] for h in call("/api/hosts")[1]]
 s,r,_=call("/api/hosts/profile","POST",{"ids":ids_all,"profile":"laptop"})
