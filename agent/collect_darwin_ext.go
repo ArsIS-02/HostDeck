@@ -22,6 +22,7 @@ func launchdLoaded(label string) bool {
 
 func darwinCompliance(p *Posture) {
 	add := func(c Check) { p.Checks = append(p.Checks, c) }
+	defer darwinProbeChecks(add)
 
 	// --- Time Machine ---
 	tm, err := run(10*time.Second, "/usr/bin/defaults", "read", "/Library/Preferences/com.apple.TimeMachine")

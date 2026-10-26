@@ -69,3 +69,34 @@ func TestParseSSHWeak(t *testing.T) {
 		t.Error(w)
 	}
 }
+
+func TestParseMac(t *testing.T) {
+	beta := `    CatalogURL = "https://swscan.apple.com/content/catalogs/others/index-27seed-27-26.merged-1.sucatalog.gz";`
+	if s, v := parseCatalog(beta); s != "info" || v != "channel_beta" {
+		t.Error(s, v)
+	}
+	if s, _ := parseCatalog(`AutomaticDownload = 1;`); s != "ok" {
+		t.Error("без CatalogURL — обычный канал")
+	}
+	if s, v, sv := parseNetTime("Network Time: On\nNetwork Time Server: time.apple.com\n"); s != "ok" || v != "ntp_on" || sv != "time.apple.com" {
+		t.Error(s, v, sv)
+	}
+	if s, _, _ := parseNetTime("Network Time: Off"); s != "warn" {
+		t.Error("выключено — warn")
+	}
+	if s, _, _ := parseNetTime("You need administrator access"); s != "unknown" {
+		t.Error("нет прав — unknown")
+	}
+	if parseSudoTimeout("Authentication timestamp timeout: 5.0 minutes\n") != 5 || parseSudoTimeout("x") != -1 {
+		t.Error("таймаут sudo")
+	}
+	if on, ok := parseCsrutil("System Integrity Protection status: enabled."); !on || !ok {
+		t.Error("SIP")
+	}
+	if on, ok := parseCsrutil("Authenticated Root status: disabled"); on || !ok {
+		t.Error("SSV disabled")
+	}
+	if _, ok := parseCsrutil("unknown"); ok {
+		t.Error("мусор")
+	}
+}

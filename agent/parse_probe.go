@@ -106,3 +106,54 @@ func parseSSHWeak(out string) []string {
 	}
 	return weak
 }
+
+// --- macOS ---
+
+// parseCatalog: адрес каталога обновлений из com.apple.SoftwareUpdate. В адресе есть «seed» — это бета-канал.
+func parseCatalog(defaultsOut string) (status, value string) {
+	m := regexp.MustCompile(`CatalogURL = "([^"]*)"`).FindStringSubmatch(defaultsOut)
+	if m == nil {
+		return "ok", "channel_release"
+	}
+	if strings.Contains(strings.ToLower(m[1]), "seed") {
+		return "info", "channel_beta"
+	}
+	return "ok", "channel_release"
+}
+
+// parseNetTime: вывод `systemsetup -getusingnetworktime` и `-getnetworktimeserver`.
+func parseNetTime(out string) (status, value, server string) {
+	on := regexp.MustCompile(`Network Time: (On|Off)`).FindStringSubmatch(out)
+	if on == nil {
+		return "unknown", "", ""
+	}
+	if m := regexp.MustCompile(`Network Time Server: (\S+)`).FindStringSubmatch(out); m != nil {
+		server = m[1]
+	}
+	if on[1] == "On" {
+		return "ok", "ntp_on", server
+	}
+	return "warn", "ntp_off", server
+}
+
+// parseSudoTimeout: строка из `sudo -V`: «Authentication timestamp timeout: 5.0 minutes». Минуты, -1 если не найдено.
+func parseSudoTimeout(out string) float64 {
+	m := regexp.MustCompile(`timestamp timeout: (-?[\d.]+) minutes`).FindStringSubmatch(out)
+	if m == nil {
+		return -1
+	}
+	v, _ := strconv.ParseFloat(m[1], 64)
+	return v
+}
+
+// parseCsrutil: «enabled» / «disabled» в выводе csrutil (status и authenticated-root status).
+func parseCsrutil(out string) (on, ok bool) {
+	l := strings.ToLower(out)
+	switch {
+	case strings.Contains(l, "enabled"):
+		return true, true
+	case strings.Contains(l, "disabled"):
+		return false, true
+	}
+	return false, false
+}
