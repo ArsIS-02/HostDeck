@@ -26,13 +26,25 @@
 - **Инструкция администратора** — кнопка на главной (подключение, консоль, обслуживание, безопасность)
 - Регистрация хоста по одноразовому токену, роли `admin` / `operator` / `viewer`, журнал событий.
 
+![Обзор](docs/images/home-demo.png)
+
 ![Парк хостов](docs/images/fleet-demo.png)
 
 ![Хост: приборы и проверки](docs/images/host-demo.png)
 
+![Подсказка к проверке: что это, чем опасно, команда исправления](docs/images/tooltip-demo.png)
+
 ![Список](docs/images/list-demo.png)
 
+![Установленное ПО](docs/images/software-demo.png)
+
 ![Консоль root](docs/images/terminal-demo.png)
+
+![Журнал событий](docs/images/audit-demo.png)
+
+![Светлая тема](docs/images/host-light-demo.png)
+
+![Телефон](docs/images/mobile-demo.png)
 
 *Демо-данные.*
 
