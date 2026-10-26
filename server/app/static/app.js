@@ -377,8 +377,12 @@
     const nm = (l) => el("ul", { class: "del-list" }, l.slice(0, 8).map((h) => el("li", {}, `${h.name} (${h.agent_version || "?"}${h.agent_latest ? " → " + h.agent_latest : ""})`)), l.length > 8 ? el("li", { class: "muted" }, "…") : null);
     const body = el("div", {},
       can.length ? el("div", {}, el("p", {}, T("update.body")), nm(can)) : null,
-      cannot.length ? el("div", {}, el("p", { class: "muted" }, T("update.cannot")), nm(cannot), el("pre", { class: "code" }, T("update.enable.cmd"))) : null);
-    if (!can.length) { await dialog({ title: T("update.title"), icon: "download", tone: "info", body, buttons: [{ text: T("common.close"), value: true }] }); return; }
+      cannot.length ? el("div", {}, el("p", { class: "muted" }, T("update.cannot")), nm(cannot), el("p", { class: "muted small" }, T("update.enable.cmd"))) : null);
+    if (!can.length) {
+      const r = await dialog({ title: T("update.title"), icon: "download", tone: "info", body, buttons: [{ text: T("common.close"), value: false }, { text: T("update.open.add"), value: "add", kind: "primary" }] });
+      if (r === "add") addHostDialog();
+      return;
+    }
     const yes = await dialog({ title: T("update.title"), icon: "download", tone: "info", body,
       buttons: [{ text: T("common.cancel"), value: false }, { text: T("update.ok"), value: true, kind: "primary" }] });
     if (yes !== true) return;
