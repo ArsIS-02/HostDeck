@@ -11,6 +11,10 @@ must("admins: без текущего пользователя", f({ id: "admins
 if (f({ id: "admins", status: "warn", detail: "igor, bob" }, { info: { console_user: "igor" } }).join().includes("-d igor")) bad.push("admins: удалил бы текущего");
 if (f({ id: "certs", status: "ok", detail: "x (a.pem)" })) bad.push("для «в порядке» команд быть не должно");
 if (f({ id: "firewall", status: "fail" })) bad.push("без подборки — общая команда из справки");
+must("ssh_hardening: X11 и попытки, Linux", f({ id: "ssh_hardening", status: "warn", value: "ssh_weak", detail: "X11Forwarding, MaxAuthTries 6, CBC/3DES" }, { os: "linux" }), /00-hostdeck\.conf[\s\S]*X11Forwarding no[\s\S]*MaxAuthTries 4[\s\S]*systemctl reload sshd[\s\S]*update-crypto-policies --set DEFAULT/);
+must("ssh_hardening: macOS без перезапуска", f({ id: "ssh_hardening", status: "warn", detail: "MaxAuthTries 6" }, { os: "darwin" }), /000-hostdeck\.conf/);
+must("legacy_svc: службы из результата", f({ id: "legacy_svc", status: "warn", detail: "cups, avahi-daemon" }), /disable --now cups\.service[\s\S]*avahi-daemon\.socket/);
+must("wazuh: служба не работает", f({ id: "wazuh", status: "fail", value: "wazuh_down" }), /enable --now wazuh-agent/);
 const inj = f({ id: "failed_units", status: "warn", detail: "a;rm -rf /" });
 if (inj && /rm -rf \/(\s|$)/.test(inj.join("\n").replace(/'[^']*'/g, ""))) bad.push("подстановка не экранирована");
 console.log(bad.length ? "FAIL: " + bad.join("; ") : "OK: подбор команд под проблему"); process.exit(bad.length ? 1 : 0);

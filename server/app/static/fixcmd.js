@@ -95,6 +95,30 @@
       return null;
     },
     // ---------- macOS ----------
+    ssh_hardening(c, h) {
+      const d = String(c.detail || "");
+      const mac = h && (h.os || "").toLowerCase() === "darwin" || /mac/i.test(h && h.os || "");
+      const lines = [];
+      if (/X11Forwarding/.test(d)) lines.push("X11Forwarding no");
+      if (/MaxAuthTries/.test(d)) lines.push("MaxAuthTries 4");
+      const out = [];
+      if (lines.length) {
+        const file = mac ? "/etc/ssh/sshd_config.d/000-hostdeck.conf" : "/etc/ssh/sshd_config.d/00-hostdeck.conf";
+        out.push(`sudo tee ${file} <<'EOF'\n${lines.join("\n")}\nEOF\nsudo sshd -t` + (mac ? "" : " && sudo systemctl reload sshd") + `\nsudo sshd -T | grep -Ei '${lines.map((l) => l.split(" ")[0].toLowerCase()).join("|")}'`);
+      }
+      if (/CBC|SHA-1/.test(d) && !mac) out.push("# слабые алгоритмы убирает криптополитика системы\nupdate-crypto-policies --show\nsudo update-crypto-policies --set DEFAULT && sudo systemctl restart sshd");
+      return out.length ? out : null;
+    },
+    legacy_svc(c) {
+      const names = list(c.detail);
+      if (!names.length) return null;
+      const unit = (n) => (n === "avahi-daemon" ? "avahi-daemon.service avahi-daemon.socket" : n === "cups" ? "cups.service cups.socket cups.path" : /^(telnet|rsh|rlogin|rexec|tftp)$/.test(n) ? `${n}.socket` : `${n}.service`);
+      return [names.map((n) => `sudo systemctl disable --now ${unit(n)}`).join("\n"), "sudo ss -tulpn   # проверьте, что лишние порты исчезли"];
+    },
+    wazuh(c) {
+      if (c.value === "wazuh_down") return ["sudo systemctl enable --now wazuh-agent\nsudo systemctl status wazuh-agent --no-pager", "sudo tail -n 30 /var/ossec/logs/ossec.log"];
+      return ["sudo tail -n 30 /var/ossec/logs/ossec.log\nsudo grep -A3 '<server>' /var/ossec/etc/ossec.conf", "sudo systemctl restart wazuh-agent\nsudo ss -tn | grep 1514   # соединение с менеджером"];
+    },
     timemachine(c) {
       if (c.value === "not_configured") return ["tmutil destinationinfo", "sudo tmutil setdestination /Volumes/ИМЯ_ДИСКА\nsudo tmutil enable"];
       if (c.value === "no_backups") return ["tmutil destinationinfo", "sudo tmutil startbackup --block"];
