@@ -37,7 +37,9 @@ func probeItems() []probeItem {
 			{"macOS: права audit_control", "/usr/bin/stat -f '%Sp %Su %Sg %Lp %N' /etc/security/audit_control /etc/security/audit_user 2>&1"},
 			{"macOS: общий доступ (launchd)", "/bin/launchctl print-disabled system 2>&1 | head -60"},
 			{"macOS: права критичных файлов", "/usr/bin/stat -f '%Sp %Su %Sg %Lp %N' /etc/sudoers /etc/ssh/sshd_config /etc/passwd /etc/master.passwd 2>&1"},
-			{"macOS: Bluetooth / Wi-Fi", "/usr/sbin/system_profiler SPBluetoothDataType 2>/dev/null | head -20; /usr/sbin/networksetup -listallhardwareports 2>&1 | head -30"},
+			{"macOS: Удалённый вход и общий доступ", "/usr/sbin/systemsetup -getremotelogin 2>&1; for l in com.openssh.sshd com.apple.screensharing org.net-snmp.snmpd com.nomachine.nxserver; do echo \"$l: $(/bin/launchctl print system/$l 2>&1 | grep -E '^[[:space:]]*(state|pid) =' | tr -s ' \\t' ' ' | tr '\\n' ';')\"; done; /usr/bin/pgrep -lx 'snmpd|nxserver.bin|screensharingd|ARDAgent' 2>&1"},
+			{"macOS: гостевой вход и политика паролей", "/usr/bin/defaults read /Library/Preferences/com.apple.loginwindow GuestEnabled 2>&1; /usr/bin/pwpolicy -getaccountpolicies 2>&1 | head -40"},
+			{"macOS: таймаут sudo", "/usr/bin/sudo -V 2>&1 | grep -i 'timestamp_timeout\\|Authentication timestamp timeout'; /usr/bin/grep -rn timestamp_timeout /etc/sudoers /etc/sudoers.d 2>&1"},
 		}...)
 	}
 	return append(common, []probeItem{
