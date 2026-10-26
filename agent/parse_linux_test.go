@@ -97,3 +97,15 @@ func TestSchedule(t *testing.T) {
 		t.Error("schedule junk")
 	}
 }
+
+func TestSelinuxForArch(t *testing.T) {
+	if s, v := selinuxForArch("arm64", "fail", "off"); s != "info" || v != "arch_unsupported" {
+		t.Error("arm64 off")
+	}
+	if s, _ := selinuxForArch("arm64", "ok", "enforcing"); s != "ok" {
+		t.Error("arm64 enforcing stays")
+	}
+	if s, _ := selinuxForArch("amd64", "fail", "off"); s != "fail" {
+		t.Error("amd64 off stays fail")
+	}
+}

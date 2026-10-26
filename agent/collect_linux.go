@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,7 +165,10 @@ func platformCollect(p *Posture) {
 	if ge := find("getenforce"); ge != "" {
 		out, _ := runCode(5*time.Second, ge)
 		s, v := parseSELinux(out)
+		s, v = selinuxForArch(runtime.GOARCH, s, v)
 		add(Check{ID: "selinux", Status: s, Value: v})
+	} else if runtime.GOARCH == "arm64" {
+		add(Check{ID: "selinux", Status: "info", Value: "arch_unsupported"})
 	}
 
 	// Брандмауэр: firewalld, затем ufw

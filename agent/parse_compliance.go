@@ -59,7 +59,7 @@ func parseGuest(out string) (on bool, ok bool) {
 // parseAutoLogin: имя пользователя автовхода или "" (ключа нет).
 func parseAutoLogin(out string) string {
 	s := strings.TrimSpace(out)
-	if s == "" || strings.Contains(s, "does not exist") || strings.Contains(s, "Domain") {
+	if s == "" || strings.Contains(s, "does not exist") || strings.Contains(s, "Could not find") || strings.HasPrefix(s, "Error") || strings.Contains(s, "Domain") {
 		return ""
 	}
 	return firstLine(s)

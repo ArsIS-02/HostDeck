@@ -48,7 +48,7 @@ func TestMacAccounts(t *testing.T) {
 	if on, ok := parseGuest("1\n"); !on || !ok {
 		t.Fatal("guest 1")
 	}
-	if parseAutoLogin("The domain/default pair of (...) does not exist") != "" || parseAutoLogin("alice\n") != "alice" {
+	if parseAutoLogin("The domain/default pair of (...) does not exist") != "" || parseAutoLogin("alice\n") != "alice" || parseAutoLogin("Error: Could not find key 'autoLoginUser' in domain") != "" {
 		t.Fatal("autologin")
 	}
 	got := parseAdmins("GroupMembership: root alice _spotlight bob\n")

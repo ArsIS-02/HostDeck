@@ -19,6 +19,15 @@ func parseSELinux(out string) (string, string) {
 	return "unknown", strings.TrimSpace(firstLine(out))
 }
 
+// selinuxForArch: на arm64 в используемых дистрибутивах SELinux не предусмотрен. Если он там не работает,
+// это не проблема хоста, а особенность архитектуры: статус «info». Если же реально включён — показываем как есть.
+func selinuxForArch(arch, status, value string) (string, string) {
+	if arch == "arm64" && (status == "fail" || status == "unknown") {
+		return "info", "arch_unsupported"
+	}
+	return status, value
+}
+
 // parseIptables читает вывод `iptables -S`: политика цепочки INPUT и число правил (-A).
 func parseIptables(out string) (policy string, rules int) {
 	for _, ln := range strings.Split(out, "\n") {
