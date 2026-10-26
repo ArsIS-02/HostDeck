@@ -71,7 +71,7 @@
     "sw.none.d": "Агент присылает его раз в сутки; можно запросить сейчас.", "sw.queued": "Запрос списка ПО отправлен",
     "sw.show": "Показано: {n}",
 
-    "host.tab.terminal": "Терминал", "host.console": "Консоль",
+    "host.tab.terminal": "Терминал",
     "term.warn": "Команды выполняются от имени root. Открытие и закрытие сессии записываются в журнал.",
     "term.open": "Открыть сессию", "term.close": "Закрыть сессию", "term.clear": "Очистить", "term.reconnect": "Открыть заново",
     "term.confirm.title": "Открыть консоль root на «{name}»?", "term.confirm.body": "Вы получите оболочку с правами root: любая команда будет выполнена на хосте без дополнительных подтверждений. Сессия записывается в журнал (кто, когда, сколько длилась).", "term.confirm.ok": "Открыть консоль",
@@ -198,7 +198,7 @@
     "sw.none.d": "The agent sends it once a day; you can request it now.", "sw.queued": "Software list requested",
     "sw.show": "Shown: {n}",
 
-    "host.tab.terminal": "Terminal", "host.console": "Console",
+    "host.tab.terminal": "Terminal",
     "term.warn": "Commands run as root. Opening and closing a session is recorded in the audit log.",
     "term.open": "Open session", "term.close": "Close session", "term.clear": "Clear", "term.reconnect": "Reopen",
     "term.confirm.title": "Open a root console on “{name}”?", "term.confirm.body": "You will get a shell with root privileges: any command runs on the host with no further confirmation. The session is written to the audit log (who, when, how long).", "term.confirm.ok": "Open console",

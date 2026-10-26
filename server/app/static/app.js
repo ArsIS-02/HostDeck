@@ -761,7 +761,6 @@
           el("span", { class: "spacer" }),
           me.role !== "viewer" ? button(T("host.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${id}/refresh`, { method: "POST", body: {} }); toast(T("host.refresh.queued")); } catch (e) { fail(e); } } }) : null,
           me.role === "admin" ? button(T("host.update"), { icon: "download", kind: h.update_available ? "primary" : "", onclick: () => updateAgents([h]) }) : null,
-          me.role === "admin" ? button(T("host.console"), { icon: "terminal", onclick: () => { hostTab = "terminal"; drawHostBody(); } }) : null,
           button(T("host.export"), { icon: "download", onclick: () => exportHost(curHost, swState.hostId === id && swState.items ? swState.items : null) }),
           me.role === "admin" ? button("", { icon: "trash", kind: "danger-ghost", title: T("host.delete"), onclick: async () => {
             const ok = await confirmDialog({ title: T("host.delete.title", { name: h.name }), body: T("host.delete.body"), ok: T("common.delete") });
