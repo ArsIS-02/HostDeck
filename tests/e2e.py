@@ -262,6 +262,9 @@ if bad:
     ck=[c for c in d3["checks"] if c["id"]==cid][0]
     res.append(ok(ck["status"]==ck["raw_status"] and d3["exceptions"]==0,"снятие исключения возвращает статус"))
 call("/api/hosts/"+hid+"/profile","POST",{"profile":"server"})
+s,hs,_=call("/api/hosts/"+hid+"/history?days=30")
+res.append(ok(s==200 and hs["days"]==30 and len(hs["points"])>=1 and isinstance(hs["changes"],list),"история: точки индекса есть, список смен отдаётся"))
+res.append(ok(call("/api/hosts/"+hid+"/history?days=abc")[0]==400 and call("/api/hosts/nonexistent/history")[0]==404,"история: неверный период → 400, нет хоста → 404"))
 s,au5,_=call("/api/audit")
 res.append(ok(any(r["action"]=="profile-set" and r["host"]==hid for r in au5["rows"]),"журнал: смена профиля записана"))
 if not res[-1]:

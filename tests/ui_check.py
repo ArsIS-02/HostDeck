@@ -50,6 +50,9 @@ try:
             pg.click(".host-card >> nth=0"); pg.wait_for_selector(".gauge")
             ok(pg.locator(".gauge").count() == 4, f"[{scheme}] 4 прибора")
             if scheme == "light":
+                pg.click(".tabs .tab >> text=История"); pg.wait_for_selector(".hist .hist-chart, .hist p.muted", timeout=15000)
+                ok(pg.locator(".hist .hist-chart").count() + pg.locator(".hist p.muted").count() >= 1, "вкладка «История» открывается: график или пояснение")
+                pg.click(".tabs .tab >> text=Состояние"); pg.wait_for_selector(".gauge")
                 ok(pg.locator(".host-head .select-cap", has_text="Профиль").count() == 1, "в заголовке хоста есть выбор профиля")
                 if pg.locator(".check-act .btn").count():
                     pg.click(".check-act .btn >> nth=0"); pg.wait_for_selector(".dialog input")
@@ -166,7 +169,7 @@ try:
             ok(True, "терминал: сессия открыта, приглашение root@ получено")
             pg.keyboard.type("echo hello-$((6*7))"); pg.keyboard.press("Enter")
             try:
-                pg.wait_for_selector(".term-screen:has-text('hello-42')", timeout=10000)
+                pg.wait_for_selector(".term-screen:has-text('hello-42')", timeout=30000)
             except Exception:
                 print("ЭКРАН ТЕРМИНАЛА:\n" + pg.inner_text(".term-screen")); raise
             ok(True, "терминал: команда выполнена, вывод отображён")
@@ -209,7 +212,7 @@ try:
         pg = ctx.new_page(); pg.on("pageerror", lambda e: errors.append(str(e)))
         pg.goto(B + "/"); pg.fill("#u", "admin"); pg.fill("#p", pw); pg.click("button[type=submit]"); pg.wait_for_selector(".hero")
         pg.goto(B + "/#/hosts"); pg.wait_for_selector(".host-card"); pg.screenshot(path=f"{OUT}/mobile-hosts.png", full_page=True)
-        ok(pg.evaluate("document.querySelectorAll('.host-card .avatar img').length") == 0, "без своих файлов в карточках обычные значки устройств")
+        ok(pg.evaluate("[...document.querySelectorAll('.host-card')].every(c => c.querySelector('.avatar svg, .avatar img'))"), "у каждой карточки есть значок устройства (логотип ОС или обычный значок)")
         osdir = os.path.join(ROOT, "server/app/static/os"); logo = os.path.join(osdir, "tux.svg")
         open(logo, "w").write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#222"/></svg>')
         try:

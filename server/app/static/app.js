@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const { el, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast, tip } = window.UI;
+  const { el, svg, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast, tip } = window.UI;
   const T = (k, p) => window.I18N.t(k, p);
   const root = document.getElementById("root");
 
@@ -552,11 +552,53 @@
           c.id === "disk" && c.value === "used" ? progress(c.num, { level: c.status === "ok" ? "ok" : c.status }) : null,
           det ? el("div", { class: "check-d muted small" }, det) : null,
           c.exception ? el("div", { class: "check-d muted small" }, T("exc.note", { r: c.exception.reason }) + (c.exception.expires ? " · " + T("exc.until", { d: new Date(c.exception.expires * 1000).toLocaleDateString(window.I18N.lang || undefined) }) : "")) : null,
+          c.since && c.raw_status !== "ok" && c.raw_status !== "info" ? el("div", { class: "check-d muted small" }, T("hist.since", { d: new Date(c.since * 1000).toLocaleDateString(loc(), { day: "numeric", month: "short" }) })) : null,
           c.relaxed ? el("div", { class: "check-d muted small" }, T("exc.relaxed", { p: T("profile." + h.profile) })) : null,
           me.role !== "viewer" && (c.exception || ["warn", "fail", "unknown"].includes(c.raw_status) && !c.relaxed)
             ? el("div", { class: "check-act" }, button(c.exception ? T("exc.remove") : T("exc.add"), { onclick: () => c.exception ? removeException(h, c) : addException(h, c) })) : null),
         tip(badge(c.status, "", 18), () => checkTip(c, h)));
     }));
+  }
+
+  // --- история: график соответствия и смены статусов ---------------------------------------------------------------------------------------
+  const histState = { days: 90 };
+  const STATUS_COLOR = { ok: "var(--ok)", warn: "var(--warn)", fail: "var(--fail)", unknown: "var(--unk)", info: "var(--info)", na: "var(--unk)" };
+  function historyChart(points, days) {
+    const W = 720, H = 180, L = 36, R = 10, Tp = 10, B = 24, now = Date.now() / 1000, t0 = now - days * 86400;
+    const x = (t) => L + ((t - t0) / (now - t0)) * (W - L - R), y = (v) => Tp + (1 - v / 100) * (H - Tp - B);
+    const pts = points.filter((p) => p.idx != null);
+    const g = [];
+    [0, 50, 100].forEach((v) => g.push(svg("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "var(--line, #8884)", "stroke-width": 1, "stroke-dasharray": v === 50 ? "3 4" : "" }), svg("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, String(v))));
+    for (let i = 0; i <= 3; i++) { const t = t0 + (i / 3) * (now - t0); g.push(svg("text", { x: x(t), y: H - 6, "text-anchor": i === 0 ? "start" : i === 3 ? "end" : "middle", "font-size": 11, fill: "var(--muted)" }, new Date(t * 1000).toLocaleDateString(loc(), { day: "numeric", month: "short" }))); }
+    if (pts.length) {
+      // ступенчатая линия: значение держится до следующей точки
+      let d = `M${x(Math.max(pts[0].ts, t0))},${y(pts[0].idx)}`;
+      pts.forEach((p, i) => { d += ` L${x(p.ts)},${y(i ? pts[i - 1].idx : p.idx)} L${x(p.ts)},${y(p.idx)}`; });
+      d += ` L${x(now)},${y(pts[pts.length - 1].idx)}`;
+      g.push(svg("path", { d, fill: "none", stroke: "var(--accent, #0a84ff)", "stroke-width": 2, "stroke-linejoin": "round" }));
+      pts.forEach((p) => g.push(svg("circle", { cx: x(p.ts), cy: y(p.idx), r: 3, fill: STATUS_COLOR[p.worst] || "var(--unk)" }, svg("title", {}, `${fmtDate(p.ts)} · ${T("host.index", { n: p.idx })}`))));
+    }
+    return svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "hist-chart", role: "img", "aria-label": T("hist.chart") }, g);
+  }
+  function historyTab(h) {
+    const box = el("div", { class: "hist" });
+    const draw = async () => {
+      box.replaceChildren(el("p", { class: "muted" }, T("common.loading")));
+      try {
+        const d = await api(`/api/hosts/${h.id}/history?days=${histState.days}`);
+        const rows = d.changes.map((c) => el("tr", {}, el("td", {}, fmtDate(c.ts)), el("td", {}, checkLabel(c.check)),
+          el("td", {}, badge(c.from || "unknown", T("status." + (c.from || "unknown")), 14), " → ", badge(c.to, T("status." + c.to), 14)),
+          el("td", { class: "muted" }, c.detail || "")));
+        box.replaceChildren(
+          el("div", { class: "hist-bar" }, el("h2", { class: "sec" }, T("hist.chart")),
+            select([30, 90, 365].map((v) => ({ value: String(v), label: T("hist.days", { n: v }) })), String(histState.days), (v) => { histState.days = Number(v); draw(); }, { icon: "clock", label: T("hist.range") })),
+          d.points.length ? historyChart(d.points, d.days) : el("p", { class: "muted" }, T("hist.nopoints")),
+          el("h2", { class: "sec" }, T("hist.changes")),
+          rows.length ? el("div", { class: "table-wrap" }, el("table", { class: "table" }, el("thead", {}, el("tr", {}, ["hist.col.time", "hist.col.check", "hist.col.change", "hist.col.detail"].map((k) => el("th", {}, T(k))))), el("tbody", {}, rows))) : el("p", { class: "muted" }, T("hist.nochanges")));
+      } catch (e) { box.replaceChildren(el("p", { class: "muted" }, String(e.message || e))); }
+    };
+    draw();
+    return box;
   }
 
   function stateTab(h) {
@@ -618,9 +660,9 @@
   function drawHostBody() {
     if (!hostBox || !curHost) return;
     const h = curHost;
-    const tabs = [["state", "host.tab.state", "cpu"], ["software", "host.tab.software", "apps"], ["details", "host.tab.details", "info"]];
+    const tabs = [["state", "host.tab.state", "cpu"], ["software", "host.tab.software", "apps"], ["history", "host.tab.history", "clock"], ["details", "host.tab.details", "info"]];
     if (me.role === "admin") tabs.push(["terminal", "host.tab.terminal", "terminal"]);
-    const content = hostTab === "software" ? softwareTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
+    const content = hostTab === "software" ? softwareTab(h) : hostTab === "history" ? historyTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
     hostBox.replaceChildren(
       el("div", { class: "tabs", role: "tablist" }, tabs.map(([k, key, ic]) => el("button", { role: "tab", class: "tab" + (hostTab === k ? " active" : ""), "aria-selected": String(hostTab === k),
         onclick: async () => { hostTab = k; if (k === "software" && swState.hostId !== h.id) { swState.items = null; drawHostBody(); await loadSoftware(h); } drawHostBody(); } },

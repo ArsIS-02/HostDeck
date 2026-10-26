@@ -399,6 +399,52 @@ def compliance_index(checks):
         tot += {"ok": 1, "warn": 0.5, "fail": 0}[st]
     return round(100 * tot / n) if n else None
 
+# --- история изменений ----------------------------------------------------------------------------------------------------------------
+HISTORY_KEEP_DAYS = 400
+HISTORY_MAX_ROWS = 2000      # на один хост
+POINT_EVERY = 6 * 3600       # точка индекса пишется при изменении значения или не реже, чем раз в 6 часов
+
+
+def record_history(hid, old, new, now):
+    """Сохраняет смены сырого статуса проверок (то, что сообщил агент, без учёта профиля и исключений).
+    Первый отчёт хоста и появление новой проверки (после обновления агента) сменой не считаются."""
+    if not old:
+        return
+    prev = {c.get("id"): c for c in old.get("checks", []) if c.get("id")}
+    for c in new.get("checks", []):
+        cid, st = c.get("id"), c.get("status", "unknown")
+        o = prev.get(cid)
+        if not o or o.get("status") == st:
+            continue
+        db.x("INSERT INTO history(host_id,ts,check_id,from_status,to_status,value,detail) VALUES(?,?,?,?,?,?,?)",
+             (hid, now, cid, o.get("status"), st, str(c.get("value") or "")[:60], str(c.get("detail") or "")[:200]))
+    db.x("DELETE FROM history WHERE host_id=? AND (ts<? OR id NOT IN (SELECT id FROM history WHERE host_id=? ORDER BY id DESC LIMIT ?))",
+         (hid, now - HISTORY_KEEP_DAYS * 86400, hid, HISTORY_MAX_ROWS))
+
+
+def record_index_point(hid, posture, now):
+    row = db.q1("SELECT profile FROM hosts WHERE id=?", (hid,))
+    prof = host_profile(row) if row else "server"
+    checks = effective_checks(posture.get("checks", []), prof, active_exceptions(hid, now))
+    idx = compliance_index(checks)
+    worst = "ok"
+    for c in checks:
+        if RANK.get(c.get("status", "unknown"), 1) > RANK.get(worst, 0):
+            worst = c.get("status")
+    last = db.q1("SELECT ts,idx,worst FROM idx_points WHERE host_id=? ORDER BY ts DESC LIMIT 1", (hid,))
+    if last and last["idx"] == idx and last["worst"] == worst and now - last["ts"] < POINT_EVERY:
+        return
+    db.x("INSERT INTO idx_points(host_id,ts,idx,worst) VALUES(?,?,?,?)", (hid, now, idx, worst))
+    db.x("DELETE FROM idx_points WHERE host_id=? AND ts<?", (hid, now - HISTORY_KEEP_DAYS * 86400))
+
+
+def since_map(hid):
+    """Для каждой проверки — когда она получила текущий статус (последняя смена в него)."""
+    out = {}
+    for r in db.q("SELECT check_id,to_status,ts FROM history WHERE host_id=? ORDER BY id", (hid,)):
+        out[r["check_id"]] = (r["to_status"], r["ts"])
+    return out
+
 _latest = {"mtime": None, "v": None}
 
 
@@ -459,6 +505,11 @@ def summarize(row, detail=False):
     out["agent_latest"] = latest
     out["update_available"] = bool(cur and lat and cur < lat)
     if detail:
+        sm = since_map(row["id"])
+        for c in checks:
+            t = sm.get(c.get("id"))
+            if t and t[0] == c.get("raw_status"):
+                c["since"] = t[1]
         out["checks"] = checks
     return out
 
@@ -479,6 +530,25 @@ async def host_detail(request: Request):
     if not row:
         return err("хост не найден", 404)
     return JSONResponse(summarize(row, detail=True))
+
+
+async def host_history(request: Request):
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    try:
+        days = max(1, min(int(request.query_params.get("days", "90")), HISTORY_KEEP_DAYS))
+    except ValueError:
+        return err("days: число")
+    since = time.time() - days * 86400
+    changes = [{"ts": r["ts"], "check": r["check_id"], "from": r["from_status"], "to": r["to_status"], "value": r["value"], "detail": r["detail"]}
+               for r in db.q("SELECT ts,check_id,from_status,to_status,value,detail FROM history WHERE host_id=? AND ts>=? ORDER BY ts DESC LIMIT 500", (hid, since))]
+    points = [{"ts": r["ts"], "idx": r["idx"], "worst": r["worst"]}
+              for r in db.q("SELECT ts,idx,worst FROM idx_points WHERE host_id=? AND ts>=? ORDER BY ts", (hid, since))]
+    return JSONResponse({"days": days, "changes": changes, "points": points})
 
 
 async def host_profile_set(request: Request):
@@ -643,6 +713,8 @@ async def delete_hosts(user, ids):
         db.audit(user["name"], "host-deleted", host=hid, host_name=row["name"])
         db.x("DELETE FROM hosts WHERE id=?", (hid,))
         db.x("DELETE FROM exceptions WHERE host_id=?", (hid,))
+        db.x("DELETE FROM history WHERE host_id=?", (hid,))
+        db.x("DELETE FROM idx_points WHERE host_id=?", (hid,))
         queues.pop(hid, None)
         n += 1
     return n
@@ -795,8 +867,11 @@ async def agent_report(request: Request):
         new_v = str(data.get("version") or "")[:40]
         if new_v and host["agent_version"] and new_v != host["agent_version"]:
             db.audit("agent", "agent-updated", host=host["id"], detail=f"{host['agent_version']} → {new_v}")
+        prev = db.q1("SELECT posture FROM hosts WHERE id=?", (host["id"],))
+        record_history(host["id"], json.loads(prev["posture"]) if prev and prev["posture"] else None, d, now)
         db.x("UPDATE hosts SET posture=?, posture_at=?, last_seen=?, agent_version=COALESCE(?,agent_version), os=COALESCE(?,os) WHERE id=?",
              (json.dumps(d, ensure_ascii=False), now, now, data.get("version"), data.get("os"), host["id"]))
+        record_index_point(host["id"], d, now)
         return JSONResponse({"ok": True})
     if kind == "metrics":
         d = data.get("data")
@@ -955,6 +1030,7 @@ app = Starlette(
         Route("/api/hosts", hosts_list),
         Route("/api/hosts/{id}", host_detail),
         Route("/api/hosts/{id}/refresh", host_refresh, methods=["POST"]),
+        Route("/api/hosts/{id}/history", host_history),
         Route("/api/hosts/{id}/profile", host_profile_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions", exception_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions/{check}", exception_delete, methods=["DELETE"]),

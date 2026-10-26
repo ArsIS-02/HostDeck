@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS hosts(
 CREATE TABLE IF NOT EXISTS exceptions(
   host_id TEXT NOT NULL, check_id TEXT NOT NULL, reason TEXT NOT NULL, expires REAL, actor TEXT, created REAL NOT NULL,
   PRIMARY KEY(host_id, check_id));
+CREATE TABLE IF NOT EXISTS history(
+  id INTEGER PRIMARY KEY, host_id TEXT NOT NULL, ts REAL NOT NULL, check_id TEXT NOT NULL,
+  from_status TEXT, to_status TEXT NOT NULL, value TEXT, detail TEXT);
+CREATE INDEX IF NOT EXISTS history_host ON history(host_id, ts);
+CREATE TABLE IF NOT EXISTS idx_points(
+  host_id TEXT NOT NULL, ts REAL NOT NULL, idx INTEGER, worst TEXT);
+CREATE INDEX IF NOT EXISTS idx_points_host ON idx_points(host_id, ts);
 CREATE TABLE IF NOT EXISTS audit(
   id INTEGER PRIMARY KEY, ts REAL NOT NULL, actor TEXT, host TEXT, action TEXT NOT NULL, detail TEXT);
 """

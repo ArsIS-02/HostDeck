@@ -266,3 +266,4 @@ tr.off { opacity: .7; } .c-cb { width: 44px; } .cell-host { display: flex; align
 .c-act { width: 52px; text-align: right; } .del-list { margin: 0 0 10px; padding-left: 20px; } .del-list li { margin: 2px 0; }
 .hc-foot .btn { margin-left: auto; padding: 4px 8px; }
 .check-act { margin-top: 6px; } .check-act .btn { font-size: 12px; padding: 3px 10px; }
+.hist-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; } .hist-chart { width: 100%; height: auto; max-height: 240px; } .hist .table-wrap { overflow-x: auto; } .hist td { vertical-align: middle; }
