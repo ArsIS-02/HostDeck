@@ -33,7 +33,7 @@ sleep 4; systemctl --user is-active hostdeck; curl -s http://127.0.0.1:8080/api/
 
 Обновить агента: та же команда без токена и имени в конце.
 
-**Обновление из веб-интерфейса.** Один раз, вручную, обновите агента командой без токена и имени, добавив `HOSTDECK_AUTOUPDATE=1` перед `bash` (например, `sudo HOSTDECK_AUTOUPDATE=1 HOSTDECK_CA="$f" bash "$s"`). Выключить обратно: `HOSTDECK_AUTOUPDATE=0` или `sudo hostdeck-agent set -autoupdate off`. После этого порядок такой: обновили сервер (`podman build` и `restart`), в интерфейсе у хостов появилась метка «Доступна версия», нажали «Обновить агента». Откат на хосте вручную: `sudo mv /usr/local/bin/hostdeck-agent.prev /usr/local/bin/hostdeck-agent && sudo systemctl restart hostdeck-agent` (на macOS: `launchctl kickstart -k system/local.hostdeck.agent`).
+**Обновление из веб-интерфейса.** Один раз, вручную, обновите агента готовой командой из окна «Добавить хост»: блок «Обновить уже установленного агента» уже содержит `HOSTDECK_AUTOUPDATE=1`, без токена и имени. Выключить обратно: `HOSTDECK_AUTOUPDATE=0` или `sudo hostdeck-agent set -autoupdate off`. После этого порядок такой: обновили сервер (`podman build` и `restart`), в интерфейсе у хостов появилась метка «Доступна версия», нажали «Обновить агента». Откат на хосте вручную: `sudo mv /usr/local/bin/hostdeck-agent.prev /usr/local/bin/hostdeck-agent && sudo systemctl restart hostdeck-agent` (на macOS: `launchctl kickstart -k system/local.hostdeck.agent`).
 
 Без внутреннего CA обновление можно сделать короткой командой:
 

@@ -456,25 +456,32 @@
             const name = nameIn.value.trim();
             const caSha = r.install_sha256 ? r.ca_sha256 : null;
             const caCb = caSha ? checkbox({ label: T("add.ca"), checked: true }) : null;
-            const build = () => {
-              const o = location.origin, tf = (termCb.checked ? "HOSTDECK_TERMINAL=1 " : "") + (updCb.checked ? "HOSTDECK_AUTOUPDATE=1 " : "");
-              const tail = `${r.token}${name ? ` ${name}` : ""}`;
+            // upd=true — команда обновления уже установленного агента: без токена и имени, сразу с разрешением обновлений из веб-интерфейса
+            const build = (upd = false) => {
+              const o = location.origin, tf = upd ? "HOSTDECK_AUTOUPDATE=1 " : (termCb.checked ? "HOSTDECK_TERMINAL=1 " : "") + (updCb.checked ? "HOSTDECK_AUTOUPDATE=1 " : "");
+              const tail = upd ? "" : ` ${r.token}${name ? ` ${name}` : ""}`;
               if (caCb && caCb.checked) {
                 // CA и скрипт скачиваются без проверки канала: подлинность доказывают отпечатки из этой (авторизованной) страницы.
                 // Скрипт содержит контрольные суммы агентов, а регистрацию с токеном делает сам агент с проверкой по CA.
                 const h = (v) => `"$( (sha256sum || shasum -a 256) < "${v}" 2>/dev/null | cut -d' ' -f1)"`;
-                return `f=$(mktemp) && s=$(mktemp) && curl -fsSLk ${o}/ca.pem -o "$f" && curl -fsSLk ${o}/install.sh -o "$s" && [ ${h("$f")} = ${caSha} ] && [ ${h("$s")} = ${r.install_sha256} ] && sudo ${tf}HOSTDECK_CA="$f" bash "$s" ${tail}`;
+                return `f=$(mktemp) && s=$(mktemp) && curl -fsSLk ${o}/ca.pem -o "$f" && curl -fsSLk ${o}/install.sh -o "$s" && [ ${h("$f")} = ${caSha} ] && [ ${h("$s")} = ${r.install_sha256} ] && sudo ${tf}HOSTDECK_CA="$f" bash "$s"${tail}`;
               }
-              return `curl -fsSL ${o}/install.sh | sudo ${tf}bash -s -- ${tail}`;
+              return `curl -fsSL ${o}/install.sh | sudo ${tf}bash -s --${tail}`;
             };
             let cmd = build();
             const pre = el("pre", { class: "code" }, cmd);
-            const refresh = () => { cmd = build(); pre.textContent = cmd; };
+            const upre = el("pre", { class: "code" }, build(true));
+            const refresh = () => { cmd = build(); pre.textContent = cmd; upre.textContent = build(true); };
+            updCb.addEventListener("change", refresh); termCb.addEventListener("change", refresh);
             if (caCb) caCb.addEventListener("change", refresh);
             body.replaceChildren(el("h3", { class: "small-h" }, T("add.cmd.title")), pre,
               caCb ? el("label", { class: "cb-line" }, caCb, el("span", {}, T("add.ca"))) : null, el("p", { class: "muted small" }, T("add.cmd.note")),
               el("div", { class: "row" }, button(T("common.copy"), { icon: "copy", onclick: async (e) => {
                 try { await navigator.clipboard.writeText(cmd); toast(T("common.copied")); } catch (_) { const rg = document.createRange(); rg.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(rg); }
+              } })),
+              el("h3", { class: "small-h" }, T("add.upd.title")), upre, el("p", { class: "muted small" }, T("add.upd.note")),
+              el("div", { class: "row" }, button(T("common.copy"), { icon: "copy", onclick: async () => {
+                try { await navigator.clipboard.writeText(build(true)); toast(T("common.copied")); } catch (_) { const rg = document.createRange(); rg.selectNodeContents(upre); const s = getSelection(); s.removeAllRanges(); s.addRange(rg); }
               } })));
             btn.remove();
           } catch (e) { btn.disabled = false; fail(e); }

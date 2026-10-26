@@ -105,6 +105,7 @@
 
     "add.title": "Добавить хост", "add.name": "Название (необязательно)", "add.os": "Система", "add.os.mac": "macOS (Apple Silicon)", "add.os.macintel": "macOS (Intel)", "add.os.linux": "Linux (x86-64)",
     "add.terminal": "Разрешить root-консоль из веб-интерфейса (только для администраторов)", "add.create": "Создать токен", "add.token.hint": "Токен действует 24 часа и подходит для одного хоста.",
+    "add.upd.title": "Обновить уже установленного агента", "add.upd.note": "Без токена и имени: настройки и регистрация сохраняются. Команда включает обновление агента из веб-интерфейса на этом хосте (HOSTDECK_AUTOUPDATE=1); после неё кнопка «Обновить агента» заработает.",
     "add.cmd.title": "Выполните на хосте", "add.ca": "Хост не доверяет сертификату сервера (внутренний CA): передать и проверить сертификат по отпечатку", "add.cmd.note": "Команда сама скачает агент с этого сервера, проверит контрольную сумму и установит службу (macOS и Linux). Сертификат CA сверяется по отпечатку из этой страницы и используется только агентом, в систему не устанавливается. Обновить агент позже можно той же командой без токена.",
     "add.token.label": "Токен", "audit.title": "Журнал действий", "audit.empty": "Записей пока нет",
     "audit.col.time": "Время", "audit.col.actor": "Кто", "audit.col.host": "Хост", "audit.col.action": "Действие", "audit.col.detail": "Подробности",
@@ -231,6 +232,7 @@
 
     "add.title": "Add a host", "add.name": "Name (optional)", "add.os": "System", "add.os.mac": "macOS (Apple Silicon)", "add.os.macintel": "macOS (Intel)", "add.os.linux": "Linux (x86-64)",
     "add.terminal": "Allow a root console from the web UI (administrators only)", "add.create": "Create token", "add.token.hint": "The token is valid for 24 hours and works for one host.",
+    "add.upd.title": "Update an already installed agent", "add.upd.note": "No token or name: settings and enrollment are kept. The command turns on agent updates from the web UI on that host (HOSTDECK_AUTOUPDATE=1); afterwards the Update agent button works.",
     "add.cmd.title": "Run on the host", "add.ca": "The host does not trust the server certificate (internal CA): fetch it and verify by fingerprint", "add.cmd.note": "The command downloads the agent from this server, verifies its checksum and installs the service (macOS and Linux). The CA certificate is verified against the fingerprint from this page and used by the agent only, it is not installed system-wide. To update the agent later, run the same command without a token.",
     "add.token.label": "Token", "audit.title": "Audit log", "audit.empty": "No entries yet",
     "audit.col.time": "Time", "audit.col.actor": "Who", "audit.col.host": "Host", "audit.col.action": "Action", "audit.col.detail": "Details",
