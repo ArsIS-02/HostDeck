@@ -633,6 +633,20 @@ async def exceptions_list(request: Request):
     return JSONResponse([{"host_id": r["host_id"], "host": r["name"], "check": r["check_id"], "reason": r["reason"], "expires": r["expires"], "expired": r["expires"] <= now} for r in rows])
 
 
+async def report_data(request: Request):
+    """Всё для печатного отчёта: хосты с итогом, замечаниями и действующими исключениями (с причинами)."""
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    now = time.time()
+    hosts = []
+    for r in db.q(HOST_SELECT + " ORDER BY name COLLATE NOCASE"):
+        d = summarize(r, detail=True)
+        d["exceptions_list"] = [{"check": k, "reason": v["reason"], "expires": v["expires"], "actor": v["actor"]} for k, v in active_exceptions(r["id"], now).items()]
+        hosts.append(d)
+    return JSONResponse({"generated": now, "hosts": hosts})
+
+
 async def host_profile_set(request: Request):
     u, e = need(request, "operator")
     if e:
@@ -1113,6 +1127,7 @@ app = Starlette(
         Route("/api/hosts/profile", hosts_profile_many, methods=["POST"]),
         Route("/api/hosts/exceptions", hosts_exception_many, methods=["POST"]),
         Route("/api/exceptions", exceptions_list),
+        Route("/api/report", report_data),
         Route("/api/hosts/update", hosts_update_many, methods=["POST"]),
         Route("/api/hosts/{id}/update", host_update, methods=["POST"]),
         Route("/api/os-logos", os_logos),

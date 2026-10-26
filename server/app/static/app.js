@@ -209,6 +209,7 @@
       el("nav", { class: "nav", "aria-label": T("top.menu") },
         nav("#/", "nav.home", "home", route.name === "home"),
         nav("#/hosts", "nav.hosts", "grid", route.name === "hosts" || route.name === "host"),
+        nav("#/report", "nav.report", "shield", route.name === "report"),
         me && me.role === "admin" ? nav("#/audit", "nav.audit", "book", route.name === "audit") : null),
       el("span", { class: "spacer" }),
       segmented([
@@ -973,6 +974,38 @@
     return page;
   }
 
+  // --- печатный отчёт «Состояние парка» -----------------------------------------------------------------------------------------------
+  function reportView() {
+    const page = el("main", { class: "page report" }, el("p", { class: "muted" }, T("common.loading")));
+    api("/api/report").then((d) => {
+      const hs = d.hosts, idxs = hs.map((h) => h.index).filter((v) => v != null);
+      const avg = idxs.length ? Math.round(idxs.reduce((a, b) => a + b, 0) / idxs.length) : null;
+      const date = (t) => new Date(t * 1000).toLocaleDateString(loc(), { day: "numeric", month: "short", year: "numeric" });
+      const th = (keys) => el("thead", {}, el("tr", {}, keys.map((k) => el("th", {}, T(k)))));
+      const sections = hs.map((h) => {
+        const bad = (h.checks || []).filter((c) => ["fail", "warn", "unknown"].includes(c.status));
+        return el("section", { class: "rep-host" },
+          el("h2", {}, h.name, " ", badge(h.status, T("status." + h.status), 16)),
+          el("p", { class: "muted small" }, [[(h.info || {}).model, (h.info || {}).os].filter(Boolean).join(" · "), T("profile.cap") + ": " + T("profile." + h.profile), h.index != null ? T("host.index", { n: h.index }) : null, h.posture_at ? T("rep.data", { t: fmtDate(h.posture_at) }) : T("rep.nodata")].filter(Boolean).join(" · ")),
+          bad.length ? el("table", { class: "table" }, th(["rep.col.check", "rep.col.status", "rep.col.value", "rep.col.detail"]),
+            el("tbody", {}, bad.map((c) => el("tr", {}, el("td", {}, checkLabel(c.id)), el("td", {}, badge(c.status, T("status." + c.status), 14)), el("td", {}, checkValue(c)),
+              el("td", { class: "muted" }, [checkDetail(c), c.since ? T("hist.since", { d: date(c.since) }) : ""].filter(Boolean).join(" · ")))))) : el("p", {}, T("rep.clean")),
+          (h.exceptions_list || []).length ? el("div", {}, el("h3", {}, T("rep.exc")),
+            el("table", { class: "table" }, th(["rep.col.check", "rep.col.reason", "rep.col.who", "rep.col.until"]),
+              el("tbody", {}, h.exceptions_list.map((x) => el("tr", {}, el("td", {}, checkLabel(x.check)), el("td", {}, x.reason), el("td", {}, x.actor || ""), el("td", {}, x.expires ? date(x.expires) : T("exc.forever"))))))) : null);
+      });
+      page.replaceChildren(
+        el("div", { class: "page-head" }, el("div", {}, el("h1", {}, T("rep.title")), el("p", { class: "muted" }, T("rep.generated", { t: fmtDate(d.generated) }))),
+          el("span", { class: "spacer" }), el("span", { class: "no-print" }, button(T("rep.print"), { icon: "download", kind: "primary", onclick: () => window.print() }))),
+        el("p", {}, T("rep.summary", { n: hs.length, ok: hs.filter((h) => h.status === "ok").length, warn: hs.filter((h) => h.status === "warn").length, fail: hs.filter((h) => h.status === "fail").length }) + (avg != null ? " · " + T("rep.avg", { n: avg }) : "")),
+        el("table", { class: "table rep-sum" }, th(["rep.col.host", "rep.col.os", "profile.cap", "rep.col.index", "rep.col.status", "rep.col.exc"]),
+          el("tbody", {}, hs.map((h) => el("tr", {}, el("td", {}, h.name), el("td", {}, (h.info || {}).os || h.os || ""), el("td", {}, T("profile." + h.profile)), el("td", {}, h.index != null ? h.index + "%" : "—"),
+            el("td", {}, badge(h.status, T("status." + h.status), 14)), el("td", {}, String(h.exceptions)))))),
+        ...sections);
+    }).catch((e) => page.replaceChildren(el("p", { class: "muted" }, String(e.message || e))));
+    return page;
+  }
+
   // --- маршрутизация ------------------------------------------------------------------------------------------------------------------------
   function parseRoute() {
     const h = location.hash.replace(/^#/, "") || "/";
@@ -981,9 +1014,10 @@
     if (p[0] === "hosts") return { name: "hosts" };
     if (p[0] === "host" && p[1]) return { name: "host", id: p[1] };
     if (p[0] === "audit") return { name: "audit" };
+    if (p[0] === "report") return { name: "report" };
     return { name: "home" };
   }
-  const TITLES = { home: "nav.home", hosts: "nav.hosts", audit: "nav.audit" };
+  const TITLES = { home: "nav.home", hosts: "nav.hosts", audit: "nav.audit", report: "nav.report" };
 
   async function refreshHosts() {
     try { hosts = await api("/api/hosts"); } catch (e) { fail(e); }
@@ -1014,6 +1048,7 @@
       case "hosts": view = hostsView(); break;
       case "host": view = hostView(route.id); break;
       case "audit": view = me.role === "admin" ? auditView() : homeView(); break;
+      case "report": view = reportView(); break;
       default: view = homeView();
     }
     root.replaceChildren(topbar(route), view);

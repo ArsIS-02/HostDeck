@@ -50,6 +50,13 @@ try:
             pg.click(".host-card >> nth=0"); pg.wait_for_selector(".gauge")
             ok(pg.locator(".gauge").count() == 4, f"[{scheme}] 4 прибора")
             if scheme == "light":
+                pg.goto(B + "/#/report"); pg.wait_for_selector(".report .rep-host", timeout=15000)
+                ok(pg.locator(".report .rep-sum tbody tr").count() == 4 and pg.locator(".report .rep-host").count() == 4, "отчёт: сводка и разделы по 4 хостам")
+                pg.emulate_media(media="print")
+                ok(not pg.locator(".topbar").is_visible() and not pg.locator(".report .no-print").is_visible(), "печать: меню и кнопка скрыты")
+                pdf = pg.pdf(format="A4"); ok(len(pdf) > 5000 and pdf[:4] == b"%PDF", "отчёт сохраняется в PDF")
+                pg.emulate_media(media="screen")
+                pg.goto(B + "/#/hosts"); pg.wait_for_selector(".host-card"); pg.click(".host-card >> nth=0"); pg.wait_for_selector(".gauge")
                 pg.click(".tabs .tab >> text=История"); pg.wait_for_selector(".hist .hist-chart, .hist p.muted", timeout=15000)
                 ok(pg.locator(".hist .hist-chart").count() + pg.locator(".hist p.muted").count() >= 1, "вкладка «История» открывается: график или пояснение")
                 pg.click(".tabs .tab >> text=Состояние"); pg.wait_for_selector(".gauge")
