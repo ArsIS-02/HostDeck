@@ -35,7 +35,7 @@
     "home.legend.ok": "Все проверки пройдены", "home.legend.warn": "Есть замечания: обновления, нестандартные настройки", "home.legend.fail": "Защита отключена или не хватает места",
     "home.legend.unknown": "Данные ещё не получены",
 
-    "status.ok": "В порядке", "status.warn": "Внимание", "status.fail": "Проблема", "status.unknown": "Нет данных", "status.info": "Справка",
+    "status.ok": "В порядке", "status.warn": "Внимание", "status.fail": "Проблема", "status.unknown": "Нет данных", "status.info": "Справка", "status.na": "Не применимо",
     "status.online": "На связи", "status.offline": "Не в сети",
     "hosts.title": "Парк хостов", "hosts.search": "Поиск по имени, модели, системе",
     "hosts.filter": "Состояние", "hosts.filter.all": "Все хосты", "hosts.filter.problems": "С проблемами",
@@ -162,7 +162,7 @@
     "home.legend.ok": "All checks passed", "home.legend.warn": "Notes: updates, non-default settings", "home.legend.fail": "Protection is off or disk is almost full",
     "home.legend.unknown": "No data received yet",
 
-    "status.ok": "Healthy", "status.warn": "Attention", "status.fail": "Problem", "status.unknown": "No data", "status.info": "Info",
+    "status.ok": "Healthy", "status.warn": "Attention", "status.fail": "Problem", "status.unknown": "No data", "status.info": "Info", "status.na": "Not applicable",
     "status.online": "Online", "status.offline": "Offline",
     "hosts.title": "Hosts", "hosts.search": "Search by name, model, system",
     "hosts.filter": "State", "hosts.filter.all": "All hosts", "hosts.filter.problems": "With problems",

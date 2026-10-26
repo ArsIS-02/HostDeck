@@ -50,6 +50,7 @@
     alert: ["M12 4l9 15.5H3z", "M12 10v4.5", "M12 17.5h.01"],
     x: ["M6 6l12 12M18 6L6 18"],
     info: ["M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17z", "M12 11v5", "M12 8h.01"],
+    minus: ["M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17z", "M8.5 12h7"],
     help: ["M12 20.5a8.5 8.5 0 1 0 0-17 8.5 8.5 0 0 0 0 17z", "M9.6 9.6a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.5", "M12 16.8h.01"],
     chevron: ["M7 10l5 5 5-5"],
     cpu: ["M8 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z", "M10 10h4v4h-4z", "M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"],
@@ -80,7 +81,7 @@
   }
 
   // --- простые элементы -------------------------------------------------------------------
-  const STATUS_ICON = { ok: "check", warn: "alert", fail: "x", unknown: "help", info: "info" };
+  const STATUS_ICON = { ok: "check", warn: "alert", fail: "x", unknown: "help", info: "info", na: "minus" };
   function badge(status, text, size = 14) {
     return el("span", { class: "badge s-" + status }, icon(STATUS_ICON[status] || "help", size), text ? el("span", {}, text) : null);
   }

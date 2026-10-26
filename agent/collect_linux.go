@@ -168,7 +168,7 @@ func platformCollect(p *Posture) {
 		s, v = selinuxForArch(runtime.GOARCH, s, v)
 		add(Check{ID: "selinux", Status: s, Value: v})
 	} else if runtime.GOARCH == "arm64" {
-		add(Check{ID: "selinux", Status: "info", Value: "arch_unsupported"})
+		add(Check{ID: "selinux", Status: "na", Value: "arch_unsupported"})
 	}
 
 	// Брандмауэр: firewalld, затем ufw

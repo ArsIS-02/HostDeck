@@ -115,7 +115,7 @@
 
   window.HELP.cmdFor = (c, h) => {
     const f = F[c.id];
-    if (!f || c.status === "ok" || c.status === "info") return null;
+    if (!f || c.status === "ok" || c.status === "info" || c.status === "na") return null;
     try { const r = f(c, h); return r && r.length ? r : null; } catch (_) { return null; }
   };
 })();

@@ -20,10 +20,10 @@ func parseSELinux(out string) (string, string) {
 }
 
 // selinuxForArch: на arm64 в используемых дистрибутивах SELinux не предусмотрен. Если он там не работает,
-// это не проблема хоста, а особенность архитектуры: статус «info». Если же реально включён — показываем как есть.
+// это не проблема хоста, а особенность архитектуры: статус «na» (не применимо). Если же реально включён — показываем как есть.
 func selinuxForArch(arch, status, value string) (string, string) {
 	if arch == "arm64" && (status == "fail" || status == "unknown") {
-		return "info", "arch_unsupported"
+		return "na", "arch_unsupported"
 	}
 	return status, value
 }

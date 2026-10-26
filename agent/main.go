@@ -18,6 +18,7 @@ func usage() {
 
   hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-autoupdate] [-config путь]
   hostdeck-agent set -autoupdate on|off [-config путь]   # разрешить или запретить обновление из веб-интерфейса
+  hostdeck-agent probe [-o файл] [-raw]                  # собрать сырые выводы команд для отладки проверок (запускать через sudo)
   hostdeck-agent run [-config путь]
   hostdeck-agent collect        # один раз собрать состояние и вывести JSON (для проверки)
   hostdeck-agent version
@@ -45,6 +46,8 @@ func main() {
 		cmdRun(os.Args[2:])
 	case "set":
 		cmdSet(os.Args[2:])
+	case "probe":
+		cmdProbe(os.Args[2:])
 	default:
 		usage()
 	}

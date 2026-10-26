@@ -129,13 +129,13 @@
       kids.push(el("h4", {}, U.what), el("p", {}, info.what));
       if (c.status === "ok") { kids.push(el("p", { class: "run" }, U.ok)); }
       else {
-        if (info.risk) kids.push(el("h4", {}, c.status === "info" ? U.info : U.risk), el("p", {}, info.risk));
+        if (info.risk) kids.push(el("h4", {}, (c.status === "info" || c.status === "na") ? U.info : U.risk), el("p", {}, info.risk));
         if (c.status === "unknown") kids.push(el("h4", {}, U.unknown), el("p", {}, H.unknown));
-        if (info.fix && info.fix.length && c.status !== "info") kids.push(el("h4", {}, U.fix), el("ul", {}, info.fix.map((x) => el("li", {}, x))));
+        if (info.fix && info.fix.length && c.status !== "info" && c.status !== "na") kids.push(el("h4", {}, U.fix), el("ul", {}, info.fix.map((x) => el("li", {}, x))));
         // команды под конкретную проблему (имена файлов, служб, портов из результата); если подборки нет — общая команда из справки
         const dyn = window.HELP.cmdFor ? window.HELP.cmdFor(c, h) : null;
         const blocks = dyn || [info.cmd, info.cmd2].filter(Boolean);
-        if (blocks.length && c.status !== "info") {
+        if (blocks.length && c.status !== "info" && c.status !== "na") {
           kids.push(el("h4", {}, dyn ? U.cmd + " · " + U.cmd_for : U.cmd), blocks.map((b) => el("pre", {}, b)));
           kids.push(el("p", { class: "run" }, U.run));
         }

@@ -348,7 +348,7 @@ async def me(request: Request):
 # список ПО в сводку не тянем: считаем записи на стороне SQLite
 HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,metrics,metrics_at,software_at,"
                "CASE WHEN software IS NULL THEN NULL ELSE json_array_length(software) END AS software_count FROM hosts")
-RANK = {"fail": 3, "warn": 2, "unknown": 1, "ok": 0, "info": 0}
+RANK = {"fail": 3, "warn": 2, "unknown": 1, "ok": 0, "info": 0, "na": 0}
 
 _latest = {"mtime": None, "v": None}
 

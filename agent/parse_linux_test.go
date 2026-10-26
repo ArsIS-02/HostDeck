@@ -99,7 +99,7 @@ func TestSchedule(t *testing.T) {
 }
 
 func TestSelinuxForArch(t *testing.T) {
-	if s, v := selinuxForArch("arm64", "fail", "off"); s != "info" || v != "arch_unsupported" {
+	if s, v := selinuxForArch("arm64", "fail", "off"); s != "na" || v != "arch_unsupported" {
 		t.Error("arm64 off")
 	}
 	if s, _ := selinuxForArch("arm64", "ok", "enforcing"); s != "ok" {
