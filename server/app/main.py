@@ -346,9 +346,58 @@ async def me(request: Request):
 
 # --- хосты ---------------------------------------------------------------
 # список ПО в сводку не тянем: считаем записи на стороне SQLite
-HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,metrics,metrics_at,software_at,"
+HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,metrics,metrics_at,software_at,profile,"
                "CASE WHEN software IS NULL THEN NULL ELSE json_array_length(software) END AS software_count FROM hosts")
 RANK = {"fail": 3, "warn": 2, "unknown": 1, "ok": 0, "info": 0, "na": 0}
+
+# Профили хоста. У «сервера» пороги строгие (как есть). У остальных часть замечаний «warn» понижается до справки «info»:
+# это не скрывает проверку, а убирает из итога то, что для такой роли нормально. «fail» профиль не смягчает никогда.
+PROFILES = ("server", "laptop", "lab")
+_LAPTOP = {"legacy_svc", "net_daemons", "update_channel", "internet_sharing", "sharing_screen", "sharing_remote", "airdrop",
+           "lockout", "ports", "timemachine", "display_sleep", "screensaver"}
+_LAB = _LAPTOP | {"ssh_hardening", "crypto_policy", "pw_policy", "sysctl", "tmp_mount", "log_forward", "integrity", "journal",
+                  "audit_rules", "audit_state", "sudo_timeout", "sudo_nopasswd", "sharing_files"}
+RELAX = {"server": set(), "laptop": _LAPTOP, "lab": _LAB}
+
+
+def host_profile(row):
+    p = row["profile"] if "profile" in row.keys() else None
+    return p if p in PROFILES else "server"
+
+
+def active_exceptions(hid, now=None):
+    now = now or time.time()
+    return {r["check_id"]: {"reason": r["reason"], "expires": r["expires"], "actor": r["actor"]}
+            for r in db.q("SELECT check_id,reason,expires,actor FROM exceptions WHERE host_id=?", (hid,))
+            if not r["expires"] or r["expires"] > now}
+
+
+def effective_checks(checks, profile, exceptions):
+    """Применяет профиль и исключения. Сырой статус сохраняется в raw_status."""
+    out = []
+    for c in checks:
+        c = dict(c)
+        c["raw_status"] = st = c.get("status", "unknown")
+        ex = exceptions.get(c.get("id"))
+        if ex and st in ("warn", "fail", "unknown"):
+            c["status"], c["exception"] = "info", ex
+        elif st == "warn" and c.get("id") in RELAX[profile]:
+            c["status"], c["relaxed"] = "info", True
+        out.append(c)
+    return out
+
+
+def compliance_index(checks):
+    """Доля соответствия, 0–100. Считаются только проверки с определённым результатом: ok=1, warn=0.5, fail=0.
+    Справочные, неприменимые, исключённые и «нет данных» в расчёт не входят. Если считать нечего — None."""
+    n = tot = 0
+    for c in checks:
+        st = c.get("status")
+        if c.get("exception") or c.get("relaxed") or st not in ("ok", "warn", "fail"):
+            continue
+        n += 1
+        tot += {"ok": 1, "warn": 0.5, "fail": 0}[st]
+    return round(100 * tot / n) if n else None
 
 _latest = {"mtime": None, "v": None}
 
@@ -380,9 +429,12 @@ def summarize(row, detail=False):
     posture = json.loads(row["posture"]) if row["posture"] else None
     counts = {"ok": 0, "warn": 0, "fail": 0, "unknown": 0}
     worst = "unknown"
+    profile = host_profile(row)
+    exc = active_exceptions(row["id"], now)
+    checks = effective_checks((posture or {}).get("checks", []), profile, exc) if posture else []
     if posture:
         worst = "ok"
-        for c in posture.get("checks", []):
+        for c in checks:
             st = c.get("status", "unknown")
             if st in counts:
                 counts[st] += 1
@@ -394,7 +446,8 @@ def summarize(row, detail=False):
     out = {
         "id": row["id"], "name": row["name"], "os": row["os"], "agent_version": row["agent_version"],
         "online": online, "last_seen": row["last_seen"], "posture_at": row["posture_at"],
-        "status": worst, "counts": counts,
+        "status": worst, "counts": counts, "profile": profile, "index": compliance_index(checks) if posture else None,
+        "exceptions": len(exc),
         "info": (posture or {}).get("info", {}),
         "metrics": json.loads(row["metrics"]) if row["metrics"] else None,
         "metrics_at": row["metrics_at"],
@@ -406,7 +459,7 @@ def summarize(row, detail=False):
     out["agent_latest"] = latest
     out["update_available"] = bool(cur and lat and cur < lat)
     if detail:
-        out["checks"] = (posture or {}).get("checks", [])
+        out["checks"] = checks
     return out
 
 
@@ -426,6 +479,68 @@ async def host_detail(request: Request):
     if not row:
         return err("хост не найден", 404)
     return JSONResponse(summarize(row, detail=True))
+
+
+async def host_profile_set(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    prof = data.get("profile")
+    if prof not in PROFILES:
+        return err("профиль: server, laptop или lab")
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    db.x("UPDATE hosts SET profile=? WHERE id=?", (prof, hid))
+    db.audit(u["name"], "profile-set", host=hid, detail=prof)
+    return JSONResponse({"profile": prof})
+
+
+async def exception_set(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    cid, reason = str(data.get("check") or "").strip(), str(data.get("reason") or "").strip()
+    if not re.fullmatch(r"[a-z0-9_]{1,40}", cid):
+        return err("не указана проверка")
+    if not (3 <= len(reason) <= 300):
+        return err("причина обязательна (от 3 до 300 знаков)")
+    days = data.get("days")
+    if days in (None, "", 0):
+        expires = None
+    else:
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            return err("срок должен быть числом дней")
+        if not 1 <= days <= 3650:
+            return err("срок от 1 до 3650 дней")
+        expires = time.time() + days * 86400
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    db.x("INSERT OR REPLACE INTO exceptions(host_id,check_id,reason,expires,actor,created) VALUES(?,?,?,?,?,?)",
+         (hid, cid, reason, expires, u["name"], time.time()))
+    db.audit(u["name"], "exception-set", host=hid, detail=f"{cid}: {reason}" + (f" (дней: {days})" if expires else ""))
+    return JSONResponse({"ok": True})
+
+
+async def exception_delete(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    hid, cid = request.path_params["id"], request.path_params["check"]
+    db.x("DELETE FROM exceptions WHERE host_id=? AND check_id=?", (hid, cid))
+    db.audit(u["name"], "exception-removed", host=hid, detail=cid)
+    return JSONResponse({"ok": True})
 
 
 async def host_refresh(request: Request):
@@ -527,6 +642,7 @@ async def delete_hosts(user, ids):
         await close_host_terms(hid)
         db.audit(user["name"], "host-deleted", host=hid, host_name=row["name"])
         db.x("DELETE FROM hosts WHERE id=?", (hid,))
+        db.x("DELETE FROM exceptions WHERE host_id=?", (hid,))
         queues.pop(hid, None)
         n += 1
     return n
@@ -839,6 +955,9 @@ app = Starlette(
         Route("/api/hosts", hosts_list),
         Route("/api/hosts/{id}", host_detail),
         Route("/api/hosts/{id}/refresh", host_refresh, methods=["POST"]),
+        Route("/api/hosts/{id}/profile", host_profile_set, methods=["POST"]),
+        Route("/api/hosts/{id}/exceptions", exception_set, methods=["POST"]),
+        Route("/api/hosts/{id}/exceptions/{check}", exception_delete, methods=["DELETE"]),
         Route("/api/hosts/{id}/software", host_software),
         Route("/api/hosts/{id}/software/refresh", host_software_refresh, methods=["POST"]),
         Route("/api/hosts/{id}", host_delete, methods=["DELETE"]),

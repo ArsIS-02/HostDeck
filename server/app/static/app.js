@@ -526,6 +526,21 @@
       m.swap_pct > 0 ? el("div", { class: "swap" }, progress(m.swap_pct, { label: T("gauge.swap"), text: Math.round(m.swap_pct) + "%" })) : null);
   }
 
+  async function addException(h, c) {
+    const reason = el("input", { type: "text", class: "input", maxlength: "300", placeholder: T("exc.reason.ph"), "aria-label": T("exc.reason") });
+    const days = el("select", { class: "input", "aria-label": T("exc.days") }, [[0, T("exc.forever")], [30, "30"], [90, "90"], [365, "365"]].map(([v, t]) => el("option", { value: String(v) }, v ? T("exc.days.n", { n: t }) : t)));
+    const body = el("div", { class: "form" }, el("p", {}, T("exc.body", { c: checkLabel(c.id) })), el("label", {}, T("exc.reason")), reason, el("label", {}, T("exc.days")), days);
+    const yes = await dialog({ title: T("exc.title"), icon: "shield", tone: "info", body, buttons: [{ text: T("common.cancel"), value: false }, { text: T("exc.add"), value: true, kind: "primary" }] });
+    if (!yes) return;
+    try {
+      await api(`/api/hosts/${h.id}/exceptions`, { method: "POST", body: { check: c.id, reason: reason.value, days: Number(days.value) || null } });
+      toast(T("exc.saved")); renderAll();
+    } catch (e) { fail(e); }
+  }
+  async function removeException(h, c) {
+    try { await api(`/api/hosts/${h.id}/exceptions/${encodeURIComponent(c.id)}`, { method: "DELETE" }); toast(T("exc.removed")); renderAll(); } catch (e) { fail(e); }
+  }
+
   function checksGrid(h) {
     const list = [...(h.checks || [])].sort((a, b) => (SEV[a.status] ?? 9) - (SEV[b.status] ?? 9));
     if (!list.length) return el("p", { class: "muted" }, T("common.none"));
@@ -535,7 +550,11 @@
         el("span", { class: "check-ico" }, icon(CHECK_ICON[c.id] || "info", 20)),
         el("div", { class: "check-body" }, el("div", { class: "check-t" }, checkLabel(c.id)), el("div", { class: "check-v" }, checkValue(c)),
           c.id === "disk" && c.value === "used" ? progress(c.num, { level: c.status === "ok" ? "ok" : c.status }) : null,
-          det ? el("div", { class: "check-d muted small" }, det) : null),
+          det ? el("div", { class: "check-d muted small" }, det) : null,
+          c.exception ? el("div", { class: "check-d muted small" }, T("exc.note", { r: c.exception.reason }) + (c.exception.expires ? " · " + T("exc.until", { d: new Date(c.exception.expires * 1000).toLocaleDateString(window.I18N.lang || undefined) }) : "")) : null,
+          c.relaxed ? el("div", { class: "check-d muted small" }, T("exc.relaxed", { p: T("profile." + h.profile) })) : null,
+          me.role !== "viewer" && (c.exception || ["warn", "fail", "unknown"].includes(c.raw_status) && !c.relaxed)
+            ? el("div", { class: "check-act" }, button(c.exception ? T("exc.remove") : T("exc.add"), { onclick: () => c.exception ? removeException(h, c) : addException(h, c) })) : null),
         tip(badge(c.status, "", 18), () => checkTip(c, h)));
     }));
   }
@@ -624,6 +643,10 @@
           el("div", { class: "host-title" }, el("h1", {}, h.name), el("div", { class: "muted" }, [x.model, osLine(x), x.chip].filter(Boolean).join(" · "))),
           badge(h.status, T("status." + h.status), 16),
           chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off"),
+          h.index != null ? chip("shield", T("host.index", { n: h.index }), h.index >= 90 ? "c-ok" : h.index >= 70 ? "c-warn" : "c-off") : null,
+          me.role !== "viewer"
+            ? select(["server", "laptop", "lab"].map((v) => ({ value: v, label: T("profile." + v) })), h.profile, async (v) => { try { await api(`/api/hosts/${id}/profile`, { method: "POST", body: { profile: v } }); toast(T("profile.saved")); renderAll(); } catch (e) { fail(e); } }, { caption: T("profile.cap") })
+            : chip("sliders", T("profile." + h.profile), ""),
           h.update_available ? chip("download", T("host.update.avail", { v: h.agent_latest }), "c-warn") : (h.agent_version ? chip("check", T("host.update.current"), "c-ok") : null),
           el("span", { class: "spacer" }),
           me.role !== "viewer" ? button(T("host.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${id}/refresh`, { method: "POST", body: {} }); toast(T("host.refresh.queued")); } catch (e) { fail(e); } } }) : null,

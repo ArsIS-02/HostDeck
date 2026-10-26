@@ -239,6 +239,31 @@ call("/api/hosts/"+h_on["id"]+"/update","POST",{})
 time.sleep(4)
 s,au4,_=call("/api/audit")
 res.append(ok(any(r["action"]=="agent-update-current" and r["host"]==h_on["id"] for r in au4["rows"]),"повторное обновление: «уже последняя версия» попало в журнал"))
+# профили и исключения
+hid=h_on["id"]
+s,d0,_=call("/api/hosts/"+hid)
+res.append(ok(d0.get("profile")=="server" and ("index" in d0),"профиль по умолчанию — server, индекс соответствия есть"))
+s,_,_=call("/api/hosts/"+hid+"/profile","POST",{"profile":"nope"})
+res.append(ok(s==400,"неизвестный профиль отклоняется"))
+s,_,_=call("/api/hosts/"+hid+"/profile","POST",{"profile":"lab"})
+s,d1,_=call("/api/hosts/"+hid)
+res.append(ok(s==200 and d1["profile"]=="lab","профиль lab сохраняется"))
+bad=[c for c in d1["checks"] if c.get("raw_status") in ("warn","fail") and not c.get("relaxed")]
+if bad:
+    cid=bad[0]["id"]
+    s,_,_=call("/api/hosts/"+hid+"/exceptions","POST",{"check":cid,"reason":""})
+    res.append(ok(s==400,"исключение без причины отклоняется"))
+    s,_,_=call("/api/hosts/"+hid+"/exceptions","POST",{"check":cid,"reason":"нужно для лаборатории","days":30})
+    s,d2,_=call("/api/hosts/"+hid)
+    ck=[c for c in d2["checks"] if c["id"]==cid][0]
+    res.append(ok(ck["status"]=="info" and ck["exception"]["reason"]=="нужно для лаборатории" and d2["exceptions"]==1,"исключение смягчает проверку и хранит причину"))
+    s,_,_=call("/api/hosts/"+hid+"/exceptions/"+cid,"DELETE")
+    s,d3,_=call("/api/hosts/"+hid)
+    ck=[c for c in d3["checks"] if c["id"]==cid][0]
+    res.append(ok(ck["status"]==ck["raw_status"] and d3["exceptions"]==0,"снятие исключения возвращает статус"))
+call("/api/hosts/"+hid+"/profile","POST",{"profile":"server"})
+s,au5,_=call("/api/audit")
+res.append(ok(any(r["action"]=="profile-set" and r["host"]==hid for r in au5["rows"]),"журнал: смена профиля записана"))
 if not res[-1]:
     print("DEBUG журнал:",[(r["action"],r["detail"]) for r in au4["rows"][:8]]); print("DEBUG лог агента:\n"+open(os.path.join(tmp,"upd-on.log")).read()[-1500:])
 for p in loops:

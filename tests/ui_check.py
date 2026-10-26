@@ -49,6 +49,16 @@ try:
             # хост-страница с приборами
             pg.click(".host-card >> nth=0"); pg.wait_for_selector(".gauge")
             ok(pg.locator(".gauge").count() == 4, f"[{scheme}] 4 прибора")
+            if scheme == "light":
+                ok(pg.locator(".host-head .select-cap", has_text="Профиль").count() == 1, "в заголовке хоста есть выбор профиля")
+                if pg.locator(".check-act .btn").count():
+                    pg.click(".check-act .btn >> nth=0"); pg.wait_for_selector(".dialog input")
+                    pg.fill(".dialog input", "нужно для проверки")
+                    pg.click(".dialog button >> text=Исключить")
+                    pg.wait_for_selector("text=Исключено: нужно для проверки", timeout=15000)
+                    ok(pg.locator("text=Снять исключение").count() >= 1, "исключение отображается, есть кнопка «Снять исключение»")
+                    pg.click("text=Снять исключение >> nth=0"); pg.wait_for_selector("text=Исключение снято")
+                    ok(True, "исключение снимается")
             pg.wait_for_timeout(1200)
             pg.screenshot(path=f"{OUT}/host-{scheme}.png", full_page=True)
             if scheme == "dark":

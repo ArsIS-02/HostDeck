@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS enroll_tokens(
 CREATE TABLE IF NOT EXISTS hosts(
   id TEXT PRIMARY KEY, name TEXT NOT NULL, os TEXT, agent_version TEXT, key_hash TEXT NOT NULL,
   created REAL NOT NULL, last_seen REAL, posture TEXT, posture_at REAL, software TEXT, software_at REAL);
+CREATE TABLE IF NOT EXISTS exceptions(
+  host_id TEXT NOT NULL, check_id TEXT NOT NULL, reason TEXT NOT NULL, expires REAL, actor TEXT, created REAL NOT NULL,
+  PRIMARY KEY(host_id, check_id));
 CREATE TABLE IF NOT EXISTS audit(
   id INTEGER PRIMARY KEY, ts REAL NOT NULL, actor TEXT, host TEXT, action TEXT NOT NULL, detail TEXT);
 """
@@ -40,7 +43,7 @@ def conn():
             if "host_name" not in acols:  # имя хоста хранится в записи журнала, чтобы после удаления хоста история оставалась читаемой
                 _conn.execute("ALTER TABLE audit ADD COLUMN host_name TEXT")
             cols = {r[1] for r in _conn.execute("PRAGMA table_info(hosts)")}
-            for col, typ in (("metrics", "TEXT"), ("metrics_at", "REAL")):  # миграция баз этапа 1
+            for col, typ in (("metrics", "TEXT"), ("metrics_at", "REAL"), ("profile", "TEXT")):  # миграция баз этапа 1
                 if col not in cols:
                     _conn.execute(f"ALTER TABLE hosts ADD COLUMN {col} {typ}")
         return _conn
