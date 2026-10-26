@@ -645,7 +645,7 @@
   }
 
   // --- терминал (root) ---------------------------------------------------------------------------------------------
-  const term = { hostId: null, sid: null, emu: null, es: null, state: "idle", screen: null, input: null, sendQ: Promise.resolve(), buf: "", timer: null, raf: 0, cols: 100, rows: 28 };
+  const term = { sel: "", hostId: null, sid: null, emu: null, es: null, state: "idle", screen: null, input: null, sendQ: Promise.resolve(), buf: "", timer: null, raf: 0, cols: 100, rows: 28 };
   function termDispose() {
     if (term.es) { term.es.close(); term.es = null; }
     if (term.sid && term.state !== "closed") { try { fetch(`/api/term/${term.sid}/close`, { method: "POST", credentials: "same-origin", keepalive: true, headers: { "Content-Type": "application/json" }, body: "{}" }); } catch (_) { /* уходим со страницы */ } }
@@ -708,16 +708,52 @@
     if (term.screen) return term.screen;
     term.screen = el("div", { class: "term-screen", tabindex: "-1" });
     term.input = el("textarea", { class: "term-input", autocapitalize: "off", autocomplete: "off", spellcheck: "false", "aria-label": T("host.tab.terminal") });
-    term.input.addEventListener("keydown", (e) => {
+    // Выделенный текст запоминаем сразу: терминал перерисовывается при каждом выводе, и выделение иначе пропадает.
+    const selText = () => String(getSelection() || "") || term.sel || "";
+    const doCopy = async () => {
+      const t = selText(); if (!t) return false;
+      try { await navigator.clipboard.writeText(t); toast(T("common.copied")); } catch (_) { /* остаётся системное копирование */ }
+      return true;
+    };
+    const doPaste = (text) => { if (term.state === "open" && text) termSend(text.replace(/\r\n|\n/g, "\r")); };
+    const onKey = async (e) => {
       if (term.state !== "open") return;
+      const k = (e.key || "").toLowerCase(), cmd = e.metaKey, ctl = e.ctrlKey && !e.altKey;
+      // копирование: Cmd+C, Ctrl+Shift+C, а Ctrl+C — только если что-то выделено (иначе это прерывание команды)
+      if ((cmd && k === "c") || (ctl && e.shiftKey && k === "c") || (ctl && !e.shiftKey && k === "c" && selText())) {
+        if (selText()) { e.preventDefault(); await doCopy(); term.sel = ""; term.input.focus(); return; }
+      }
+      // вставка: Cmd+V, Ctrl+V, Ctrl+Shift+V — отдаём браузеру, текст придёт в событии paste
+      if ((cmd || ctl) && k === "v") { term.input.focus(); return; }
+      if (cmd) return;
       const seq = window.HDTerm.keySeq(e, term.emu.appCursor);
-      if (seq) { e.preventDefault(); termSend(seq); }
-    });
+      // начали печатать: выделение больше не нужно, фокус возвращаем в поле ввода, символ отправляем сами (чтобы не потерять первый)
+      const hadSel = !!String(getSelection() || "");
+      if (hadSel) getSelection().removeAllRanges();
+      if (hadSel || e.target !== term.input) term.input.focus();
+      if (seq) { e.preventDefault(); term.sel = ""; termSend(seq); }
+      else if ((hadSel || e.target !== term.input) && e.key.length === 1 && !ctl && !e.altKey) { e.preventDefault(); term.sel = ""; termSend(e.key); }
+    };
+    term.input.addEventListener("keydown", onKey);
+    term.screen.addEventListener("keydown", onKey);
     term.input.addEventListener("input", () => {
       const v = term.input.value; term.input.value = "";
-      if (term.state === "open" && v) termSend(v.replace(/\r?\n/g, "\r"));
+      if (term.state === "open" && v) { term.sel = ""; termSend(v.replace(/\r?\n/g, "\r")); }
     });
-    term.screen.addEventListener("mouseup", () => { if (!String(getSelection()).length) term.input.focus(); });
+    for (const t of [term.input, term.screen]) {
+      t.addEventListener("paste", (e) => { e.preventDefault(); doPaste((e.clipboardData && e.clipboardData.getData("text")) || ""); });
+      t.addEventListener("copy", (e) => { const x = selText(); if (x && e.clipboardData) { e.preventDefault(); e.clipboardData.setData("text/plain", x); } });
+    }
+    term.screen.addEventListener("mouseup", () => {
+      term.sel = String(getSelection() || "");
+      if (!term.sel) term.input.focus();
+    });
+    // вставка средней кнопкой мыши (как в обычных терминалах Linux)
+    term.screen.addEventListener("auxclick", async (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      try { doPaste(await navigator.clipboard.readText()); } catch (_) { /* нет разрешения на чтение буфера */ }
+    });
     return term.screen;
   }
   function terminalTab(h) {

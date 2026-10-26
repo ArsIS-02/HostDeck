@@ -170,6 +170,24 @@ try:
             pg.keyboard.type("echo up-test"); pg.keyboard.press("Enter"); pg.wait_for_timeout(300)
             pg.keyboard.press("ArrowUp"); pg.wait_for_timeout(500)
             ok("echo up-test" in pg.inner_text(".term-screen").split("up-test")[-2] + "echo up-test" or True, "терминал: стрелка вверх (история)")
+            # вставка (событие paste, как при Ctrl+V / Cmd+V / меню) и копирование выделенного
+            pg.keyboard.press("Control+u")
+            pg.evaluate("""() => { const i = document.querySelector('.term-input'); i.focus();
+              const dt = new DataTransfer(); dt.setData('text', 'echo pasted-$((20+22))');
+              i.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""")
+            pg.keyboard.press("Enter")
+            pg.wait_for_selector(".term-screen:has-text('pasted-42')", timeout=10000)
+            ok(True, "терминал: вставка текста (paste) уходит в сессию")
+            got = pg.evaluate("""() => { const sc = document.querySelector('.term-screen'); const r = document.createRange();
+              const l = [...sc.querySelectorAll('.tl')].find(x => x.textContent.includes('pasted-42')); r.selectNodeContents(l);
+              const s = getSelection(); s.removeAllRanges(); s.addRange(r); sc.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+              const dt = new DataTransfer(); document.querySelector('.term-input').focus();
+              document.querySelector('.term-input').dispatchEvent(new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true }));
+              return dt.getData('text/plain'); }""")
+            ok("pasted-42" in got, "терминал: выделенный текст копируется")
+            pg.keyboard.type("echo keep-going"); pg.keyboard.press("Enter")
+            pg.wait_for_selector(".term-screen:has-text('keep-going')", timeout=30000)
+            ok(True, "терминал: после копирования ввод продолжает работать")
             pg.screenshot(path=f"{OUT}/terminal-open.png")
             pg.click(".term-wrap .btn >> text=Close session"); pg.wait_for_selector(".term-screen:has-text('Session closed')", timeout=15000)
             ok(True, "терминал: сессия закрывается кнопкой")
