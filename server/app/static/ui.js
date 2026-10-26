@@ -259,6 +259,16 @@
     if (tipBox) { tipBox.remove(); tipBox = null; }
     if (tipTarget) { tipTarget.removeAttribute("aria-describedby"); tipTarget = null; }
   }
+  let tipShownAt = 0;
+  function tipPlace() {
+    if (!tipBox || !tipTarget) return;
+    const r = tipTarget.getBoundingClientRect(), b = tipBox.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = window.innerHeight, gap = 8;
+    let top = r.bottom + gap;
+    if (top + b.height > vh - 8 && r.top - gap - b.height > 8) top = r.top - gap - b.height;   // не помещается снизу — показать сверху
+    top = Math.max(8, Math.min(top, vh - b.height - 8));
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - b.width / 2, vw - b.width - 8));
+    tipBox.style.top = top + "px"; tipBox.style.left = left + "px";
+  }
   function tipShow(target, build) {
     tipHide();
     const id = "tip-" + Math.random().toString(36).slice(2, 7);
@@ -267,12 +277,8 @@
     tipBox.addEventListener("mouseleave", () => { tipTimer = setTimeout(tipHide, 180); });
     document.body.append(tipBox);
     tipTarget = target; target.setAttribute("aria-describedby", id);
-    const r = target.getBoundingClientRect(), b = tipBox.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = window.innerHeight, gap = 8;
-    let top = r.bottom + gap;
-    if (top + b.height > vh - 8 && r.top - gap - b.height > 8) top = r.top - gap - b.height;   // не помещается снизу — показать сверху
-    top = Math.max(8, Math.min(top, vh - b.height - 8));
-    const left = Math.max(8, Math.min(r.left + r.width / 2 - b.width / 2, vw - b.width - 8));
-    tipBox.style.top = top + "px"; tipBox.style.left = left + "px";
+    tipShownAt = performance.now();
+    tipPlace();
     tipBox.classList.add("on");
   }
   function tip(target, build) {
@@ -288,7 +294,13 @@
     return target;
   }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipHide(); });
-  document.addEventListener("scroll", (e) => { if (!(tipBox && e.target instanceof Node && tipBox.contains(e.target))) tipHide(); }, true);   // прокрутка внутри самой подсказки её не закрывает
+  // Прокрутка закрывает подсказку, кроме прокрутки внутри неё. Сразу после показа (фокус с клавиатуры сам прокручивает страницу
+  // к элементу) подсказку не закрываем, а переставляем к элементу.
+  document.addEventListener("scroll", (e) => {
+    if (tipBox && e.target instanceof Node && tipBox.contains(e.target)) return;
+    if (tipBox && performance.now() - tipShownAt < 400) { tipPlace(); return; }
+    tipHide();
+  }, true);   // прокрутка внутри самой подсказки её не закрывает
   document.addEventListener("click", (e) => { if (tipBox && !tipBox.contains(e.target) && !(tipTarget && tipTarget.contains(e.target))) tipHide(); });
   async function confirmDialog({ title, body, ok, tone = "danger", icon: ic = "alert" }) {
     const T = window.I18N.t;

@@ -104,6 +104,7 @@ func cmdRun(args []string) {
 	defer stop()
 	os_ := osName()
 	allowTerminal = cfg.AllowTerminal
+	allowedPorts = cfg.AllowedPorts
 	defer closeAllTerms()
 	if allowTerminal {
 		log.Printf("внимание: root-консоль из веб-интерфейса разрешена на этом хосте")

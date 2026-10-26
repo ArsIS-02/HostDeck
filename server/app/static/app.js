@@ -80,12 +80,13 @@
   }
 
   // --- проверки: подписи и значения ------------------------------------------------------------------------
-  const CHECK_ICON = { selinux: "shield", iptables: "list", sshd: "key", pkg_updates: "download", reboot: "refresh", auditd: "book", time_sync: "clock", failed_units: "alert", luks: "lock", filevault: "lock", sip: "shield", gatekeeper: "shield", firewall: "flame", stealth: "eye", auto_check: "refresh",
+  const CHECK_ICON = { timemachine: "clock", guest: "key", autologin: "key", admins: "key", sharing_screen: "eye", sharing_files: "server", sharing_remote: "eye", airdrop: "globe", xprotect: "shield", profiles: "sliders", sysext: "apps", display_sleep: "clock", screensaver: "lock", uid0: "key", empty_pw: "key", sudo_nopasswd: "key", pw_policy: "key", ports: "globe", sysctl: "sliders", tmp_mount: "disk", smart: "disk", audit_rules: "book", log_forward: "book", sec_updates: "shield", integrity: "shield", freeipa: "server", certs: "lock", selinux: "shield", iptables: "list", sshd: "key", pkg_updates: "download", reboot: "refresh", auditd: "book", time_sync: "clock", failed_units: "alert", luks: "lock", filevault: "lock", sip: "shield", gatekeeper: "shield", firewall: "flame", stealth: "eye", auto_check: "refresh",
     auto_critical: "refresh", updates: "download", screenlock: "lock", ssh: "key", mdm: "sliders", disk: "disk", platform: "info" };
   const checkLabel = (id) => (window.I18N.has("check." + id) ? T("check." + id) : id);
   function checkValue(c) {
     const v = c.value || "";
     if (v.startsWith("after:")) return T("val.after", { n: v.slice(6) });
+    if (v === "backup_at" || v === "updated_at") return T("val." + v, { t: ago(c.num) });
     if (v === "used") return T("val.used", { n: Math.round(c.num || 0) });
     if (v === "available") return T("val.available", { n: c.num });
     if (v === "none") return T("val.none") + (c.num ? ` (${T("val.checked", { t: ago(c.num) })})` : "");

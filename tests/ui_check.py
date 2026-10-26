@@ -67,6 +67,10 @@ try:
                 ok(txt.startswith("﻿") or open(path, "rb").read(3) == b"\xef\xbb\xbf", "CSV с BOM для Excel")
                 # подсказки по проверкам
                 pg.click(".tab >> nth=0"); pg.wait_for_selector(".check")
+                ok("Last backup: 9 days ago" in pg.inner_text(".check:has-text('Time Machine')") or "Last backup" in pg.inner_text(".check:has-text('Time Machine')"), "новые проверки: Time Machine показывает возраст копии")
+                pg.hover(".check:has-text('Time Machine') .badge"); pg.wait_for_selector(".tip.on")
+                ok("tmutil" in pg.inner_text(".tip") and "why it matters" in pg.inner_text(".tip").lower(), "подсказка новой проверки: причина и команда")
+                pg.mouse.move(5, 5); pg.wait_for_selector(".tip", state="detached")
                 pg.hover(".check:has-text('Stealth mode') .badge"); pg.wait_for_selector(".tip.on")
                 tt = pg.inner_text(".tip").lower()
                 ok("what it is" in tt and "ping" in tt and "setstealthmode" in tt and "how to fix" in tt, "подсказка «Stealth mode»: что это, чем важно, команда")

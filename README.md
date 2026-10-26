@@ -18,7 +18,7 @@
 - **Выгрузка в CSV** — одного хоста (сведения, проверки и всё ПО в одном файле) и парка целиком или только выбранных. UTF-8 с BOM, открывается в Excel и Numbers; ячейки, начинающиеся с `=`, `+`, `-`, `@`, экранируются.
 - Тёмная и светлая темы (или «как в системе»), русский и английский язык, оформление в стиле Apple. Диалоги и уведомления свои, без `alert` и `confirm` браузера.
 - Кнопка «Обновить данные»: сервер ставит команду в очередь, агент подхватывает её сразу (длинный опрос).
-- **Проверки Linux** — SELinux, firewalld/ufw, правила iptables/nftables, sshd (root и пароли), обновления пакетов, перезагрузка, auditd, время, сбойные службы systemd, LUKS
+- **Проверки Linux** — SELinux, firewalld/ufw, правила iptables/nftables, sshd (root и пароли), обновления пакетов, перезагрузка, auditd, время, сбойные службы systemd, LUKS, а также проверки соответствия (см. ниже)
 - **Журнал действий** — лента понятных событий по дням: вход, подключение и удаление хостов, консоль, запросы данных; фильтр и поиск. Имена удалённых хостов остаются в записях
 - **Удаление хостов** — из списка, плитки и панели выбранных (в том числе несколько сразу); хост удаляется из базы вместе со всеми данными
 - **Справка по проверкам** — при наведении на значок статуса появляется подсказка: что проверяется, чем опасно отклонение, как исправить (с командой). Тексты в `server/app/static/help.js`
@@ -109,10 +109,42 @@ curl -fsSL https://hostdeck.example.test/install.sh | sudo bash -s -- <токе�
 | SSH | `systemsetup -getremotelogin` |
 | MDM | `profiles status -type enrollment` |
 | Диск | `statfs /` |
+| Time Machine | `defaults read /Library/Preferences/com.apple.TimeMachine` (даты снимков), запасной путь `tmutil latestbackup` |
+| Гостевой вход, автовход | `sysadminctl -guestAccount status`, `defaults read …loginwindow autoLoginUser` |
+| Администраторы | `dscl . -read /Groups/admin GroupMembership` |
+| Общий доступ: экран, файлы | `launchctl print system/com.apple.screensharing`, `…/com.apple.smbd` |
+| Удалённое управление | процесс `ARDAgent` (эвристика) |
+| AirDrop | `defaults read com.apple.sharingd DiscoverableMode` у пользователя за экраном |
+| XProtect | дата файлов `XProtect.bundle` (эвристика) |
+| Профили, системные расширения | `profiles list`, `systemextensionsctl list` |
+| Дисплей и заставка | `pmset -g` (displaysleep), `defaults -currentHost read com.apple.screensaver idleTime` |
 
 Метрики для приборов: `top -l 2` (CPU), `vm_stat` и `sysctl hw.memsize` (память), `vm.swapusage`, `vm.loadavg`, `pmset -g batt`. Список ПО: `system_profiler SPApplicationsDataType` и каталоги Homebrew (`Cellar`, `Caskroom`). Температур нет: macOS отдаёт их только через `powermetrics` с повышенными правами.
 
 Разбор вывода вынесен в чистые функции (`agent/parse.go`) и покрыт тестами.
+
+## Проверки соответствия (Linux)
+
+Для Linux агент проверяет и то, что обычно требуют аудиторы (ориентир — CIS Benchmarks). Если данных нет (нет утилиты, нет прав), проверка не показывается.
+
+| Проверка | Источник | Оценка |
+|---|---|---|
+| UID 0 | `/etc/passwd` | любая запись кроме root — ошибка |
+| Пустые пароли | `/etc/shadow` | есть — ошибка |
+| sudo без пароля | `/etc/sudoers`, `/etc/sudoers.d` | есть `NOPASSWD` — предупреждение |
+| Политика паролей | `/etc/login.defs`, `pwquality.conf` | срок > 365 дней или длина < 8 — предупреждение |
+| Открытые порты | `ss -tulnp` (или `/proc/net`) | со списком `allowed_ports` в `agent.json` лишние — предупреждение, без списка — справка |
+| Параметры ядра | `/proc/sys` (ASLR, rp_filter, syncookies, redirects, kptr, dmesg, suid_dumpable) | любое отклонение — предупреждение |
+| /tmp, /var/tmp | `/proc/mounts` | нет отдельного раздела или `noexec`/`nosuid` — предупреждение |
+| SMART | `smartctl -H` | отказ — ошибка (в виртуальных машинах проверки нет) |
+| Правила аудита | `auditctl -l` | служба запущена, правил нет — предупреждение |
+| Пересылка журналов | rsyslog, syslog-ng, journal-upload, audisp-remote, агенты Wazuh/Graylog Sidecar/Filebeat и др. | нет — предупреждение; доставку проверяйте на стороне получателя |
+| Обновления безопасности | `dnf updateinfo list security`, `apt-get -s upgrade` | есть — предупреждение, критические — ошибка |
+| Целостность файлов | AIDE (база), IMA, Tripwire, Samhain | нет — предупреждение |
+| FreeIPA и sssd | `/etc/ipa/default.conf`, `sssd`, `/etc/krb5.keytab`, `sssctl domain-status` | выпал из домена — ошибка; вне домена — справка |
+| Сертификаты | PEM в `/etc/letsencrypt/live`, `/etc/pki/…`, `/etc/ipa` и др. | срок < 30 дней — предупреждение, истёк — ошибка |
+
+Разрешённые порты задаются на хосте в `/etc/hostdeck/agent.json`: `"allowed_ports": [22, 443]`, затем `systemctl restart hostdeck-agent`.
 
 ## Разработка и тесты
 

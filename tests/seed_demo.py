@@ -15,6 +15,10 @@ def checks(**ov):
     base.update(ov)
     out = [{"id": k, "status": s, "value": v} for k, (s, v) in base.items()]
     out.append({"id": "updates", "status": "ok", "value": "none", "num": now - 3600})
+    out.append({"id": "timemachine", "status": "warn", "value": "backup_at", "num": now - 9 * 86400})
+    out.append({"id": "admins", "status": "ok", "value": "admins", "num": 1, "detail": "arsen"})
+    out.append({"id": "airdrop", "status": "ok", "value": "contacts"})
+    out.append({"id": "xprotect", "status": "ok", "value": "updated_at", "num": now - 5 * 86400, "detail": "v5311"})
     out.append({"id": "disk", "status": "ok", "value": "used", "num": 42.0, "detail": "276.0"})
     return out
 

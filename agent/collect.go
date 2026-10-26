@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 // Posture — снимок состояния хоста, который уходит на сервер.
 type Posture struct {

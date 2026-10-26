@@ -168,4 +168,6 @@ func platformCollect(p *Posture) {
 	if o, err := run(10*time.Second, "/usr/bin/profiles", "status", "-type", "enrollment"); err == nil {
 		add("mdm", "info", firstLine(trim(o)))
 	}
+
+	darwinCompliance(p)
 }

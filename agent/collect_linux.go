@@ -51,6 +51,10 @@ var (
 	pkgKnown bool
 	pkgBusy  bool
 	pkgTried time.Time
+	// обновления безопасности (подмножество общих): состояние "ok", "available", "no_metadata" или "" (неизвестно)
+	secState string
+	secNames []string
+	secCrit  bool
 )
 
 func refreshPkgUpdates() {
@@ -62,26 +66,66 @@ func refreshPkgUpdates() {
 	pkgBusy, pkgTried = true, time.Now()
 	pkgMu.Unlock()
 	go func() {
-		var names []string
+		var names, sec []string
+		state, crit := "", false
 		ok := false
 		if dnf := find("dnf"); dnf != "" {
 			out, code := runCode(10*time.Minute, dnf, "-q", "check-update")
 			if code == 0 || code == 100 {
 				names, ok = parseDnfUpdates(out), true
+				state, sec, crit = dnfSecurity(dnf, len(names) > 0)
 			}
 		} else if apt := find("apt-get"); apt != "" {
 			out, code := runCode(2*time.Minute, apt, "-s", "-o", "Debug::NoLocking=1", "upgrade")
 			if code == 0 {
 				names, ok = parseAptUpdates(out), true
+				if sec = parseAptSecurity(out); len(sec) > 0 {
+					state = "available"
+				} else {
+					state = "ok"
+				}
 			}
 		}
 		pkgMu.Lock()
 		pkgBusy = false
 		if ok {
 			pkgAt, pkgNames, pkgKnown = time.Now(), names, true
+			secState, secNames, secCrit = state, sec, crit
 		}
 		pkgMu.Unlock()
 	}()
+}
+
+// dnfSecurity спрашивает у dnf только обновления безопасности. Если в репозиториях нет данных об уведомлениях
+// (updateinfo), пустой ответ ничего не доказывает: тогда возвращается "no_metadata".
+func dnfSecurity(dnf string, haveUpdates bool) (state string, names []string, crit bool) {
+	out, code := runCode(5*time.Minute, dnf, "-q", "updateinfo", "list", "security")
+	if code != 0 {
+		out, code = runCode(5*time.Minute, dnf, "-q", "updateinfo", "list", "--security")
+	}
+	if code != 0 {
+		return "", nil, false
+	}
+	adv := parseDnfSecurity(out)
+	if len(adv) == 0 {
+		if haveUpdates {
+			if all, c := runCode(5*time.Minute, dnf, "-q", "updateinfo", "list", "available"); c == 0 && strings.TrimSpace(all) == "" {
+				return "no_metadata", nil, false
+			}
+		}
+		return "ok", nil, false
+	}
+	seen := map[string]bool{}
+	for _, a := range adv {
+		if !seen[a.Pkg] {
+			seen[a.Pkg] = true
+			names = append(names, a.Pkg)
+		}
+		if a.Sev == "critical" {
+			crit = true
+		}
+	}
+	return "available", names, crit
 }
 
 func platformCollect(p *Posture) {
@@ -233,6 +277,27 @@ func platformCollect(p *Posture) {
 		}
 	}
 
+	// Обновления безопасности отдельно от остальных
+	pkgMu.Lock()
+	sState, sNames, sCrit, sBusy, sKnown := secState, secNames, secCrit, pkgBusy, pkgKnown
+	pkgMu.Unlock()
+	if find("dnf") != "" || find("apt-get") != "" {
+		switch {
+		case !sKnown && sBusy:
+			add(Check{ID: "sec_updates", Status: "unknown", Value: "running"})
+		case sState == "available":
+			st := "warn"
+			if sCrit {
+				st = "fail"
+			}
+			add(Check{ID: "sec_updates", Status: st, Value: "available", Num: float64(len(sNames)), Detail: shortList(sNames, 6)})
+		case sState == "ok":
+			add(Check{ID: "sec_updates", Status: "ok", Value: "none"})
+		case sState == "no_metadata":
+			add(Check{ID: "sec_updates", Status: "info", Value: "no_metadata"})
+		}
+	}
+
 	// Требуется ли перезагрузка
 	if _, err := os.Stat("/var/run/reboot-required"); err == nil {
 		add(Check{ID: "reboot", Status: "warn", Value: "required"})
@@ -293,4 +358,6 @@ func platformCollect(p *Posture) {
 			}
 		}
 	}
+
+	linuxCompliance(p, active)
 }

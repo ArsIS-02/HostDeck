@@ -17,6 +17,9 @@ import (
 // при регистрации (-terminal) или правкой allow_terminal в конфиге на самом хосте.
 var allowTerminal bool
 
+// allowedPorts — список из agent.json; пуст, пока администратор его не задал.
+var allowedPorts []int
+
 type termSession struct {
 	sid    string
 	master *os.File

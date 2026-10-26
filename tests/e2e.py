@@ -93,6 +93,8 @@ s,d,_=call("/api/hosts/"+hid)
 res.append(ok(len(d["checks"])>=2 and d["info"].get("os"),"подробности хоста: проверок=%d"%len(d["checks"])))
 ids={c["id"] for c in d["checks"]}
 res.append(ok("platform" not in ids and "disk" in ids and ("iptables" in ids or "failed_units" in ids or "pkg_updates" in ids),"Linux-проверки собраны: "+", ".join(sorted(ids))))
+want={"uid0","empty_pw","sudo_nopasswd","pw_policy","sysctl","tmp_mount","log_forward","integrity","freeipa","ports","sec_updates"}
+res.append(ok(len(want-ids)<=1,"проверки соответствия Linux собраны (нет: %s)"%", ".join(sorted(want-ids))))
 t0=d["posture_at"]
 call("/api/hosts/"+hid+"/refresh","POST",{})
 time.sleep(3)
