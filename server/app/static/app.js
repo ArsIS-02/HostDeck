@@ -132,9 +132,11 @@
         if (info.risk) kids.push(el("h4", {}, c.status === "info" ? U.info : U.risk), el("p", {}, info.risk));
         if (c.status === "unknown") kids.push(el("h4", {}, U.unknown), el("p", {}, H.unknown));
         if (info.fix && info.fix.length && c.status !== "info") kids.push(el("h4", {}, U.fix), el("ul", {}, info.fix.map((x) => el("li", {}, x))));
-        if (info.cmd && c.status !== "info") {
-          kids.push(el("h4", {}, U.cmd), el("pre", {}, info.cmd));
-          if (info.cmd2) kids.push(el("pre", {}, info.cmd2));
+        // команды под конкретную проблему (имена файлов, служб, портов из результата); если подборки нет — общая команда из справки
+        const dyn = window.HELP.cmdFor ? window.HELP.cmdFor(c, h) : null;
+        const blocks = dyn || [info.cmd, info.cmd2].filter(Boolean);
+        if (blocks.length && c.status !== "info") {
+          kids.push(el("h4", {}, dyn ? U.cmd + " · " + U.cmd_for : U.cmd), blocks.map((b) => el("pre", {}, b)));
           kids.push(el("p", { class: "run" }, U.run));
         }
       }

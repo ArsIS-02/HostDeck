@@ -332,7 +332,7 @@
       },
     },
     unknown: "Данные не получены: команда проверки завершилась ошибкой или параметр не задан. Причина показана в карточке ниже названия. Обычно помогает кнопка «Обновить» в шапке хоста. Если ошибка повторяется, проверьте журнал агента: /var/log/hostdeck-agent.log.",
-    ui: { what: "Что это", risk: "Почему это важно", fix: "Как исправить", cmd: "Команда (на хосте, от администратора)", unknown: "Почему нет данных", now: "Сейчас",
+    ui: { what: "Что это", risk: "Почему это важно", fix: "Как исправить", cmd: "Команда (на хосте, от администратора)", cmd_for: "для вашего случая", unknown: "Почему нет данных", now: "Сейчас",
           run: "Команды можно выполнить в «Консоли» карточки хоста, если на нём разрешена консоль.", ok: "Всё в порядке, менять ничего не нужно.", info: "Справочная информация.",
           hint: "Подсказка", close: "Закрыть" },
     guide: {
@@ -690,7 +690,7 @@
       },
     },
     unknown: "No data: the check command failed or the setting is not defined. The reason is shown on the card under the title. The Refresh button in the host header usually helps. If it keeps failing, look at the agent log: /var/log/hostdeck-agent.log.",
-    ui: { what: "What it is", risk: "Why it matters", fix: "How to fix", cmd: "Command (on the host, as administrator)", unknown: "Why there is no data", now: "Now",
+    ui: { what: "What it is", risk: "Why it matters", fix: "How to fix", cmd: "Command (on the host, as administrator)", cmd_for: "for your case", unknown: "Why there is no data", now: "Now",
           run: "You can run the commands in the host's Console, if the console is enabled there.", ok: "All good, nothing to change.", info: "For information.",
           hint: "Hint", close: "Close" },
     guide: {
