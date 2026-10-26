@@ -152,5 +152,14 @@ func cmdProbe(args []string) {
 		fmt.Fprintln(os.Stderr, "не удалось записать файл:", err)
 		os.Exit(1)
 	}
+	// запуск через sudo: отдаём файл тому, кто его запустил, иначе его не прочитать и не прикрепить
+	if u, g := os.Getenv("SUDO_UID"), os.Getenv("SUDO_GID"); u != "" && g != "" {
+		var ui, gi int
+		if _, e1 := fmt.Sscan(u, &ui); e1 == nil {
+			if _, e2 := fmt.Sscan(g, &gi); e2 == nil {
+				_ = os.Chown(out, ui, gi)
+			}
+		}
+	}
 	fmt.Printf("Готово: %s (%d КБ). Пришлите этот файл. Пароли и ключи в нём не собираются; имя хоста и адреса заменены. Просмотрите файл перед отправкой.\n", out, len(text)/1024+1)
 }
