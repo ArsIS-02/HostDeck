@@ -816,6 +816,58 @@ async def host_software(request: Request):
     return JSONResponse({"at": row["software_at"], "items": items})
 
 
+def vkey(v):
+    """Ключ для сравнения версий: числа сравниваются как числа, слова (rc, beta) как строки."""
+    return [(0, int(x), "") if x.isdigit() else (1, 0, x.lower()) for x in re.findall(r"\d+|[A-Za-z]+", v or "")]
+
+
+async def software_search(request: Request):
+    """Поиск установленного ПО по всему парку: ?q=часть названия&older=версия&src=app|brew|cask|pkg.
+    Ответ сгруппирован по названию: версии и хосты, на которых они стоят."""
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    q = request.query_params.get("q", "").strip().lower()[:80]
+    older = request.query_params.get("older", "").strip()[:40]
+    src = request.query_params.get("src", "all")
+    if src not in ("all", "app", "brew", "cask", "pkg"):
+        return err("неизвестный источник", 400)
+    lim = 300
+    okey = vkey(older) if older else None
+    apps, total, with_data, newest = {}, 0, 0, 0
+    for r in db.q("SELECT id, name, software, software_at FROM hosts ORDER BY name COLLATE NOCASE"):
+        total += 1
+        if not r["software"]:
+            continue
+        with_data += 1
+        newest = max(newest, r["software_at"] or 0)
+        try:
+            items = json.loads(r["software"])
+        except ValueError:
+            continue
+        for it in items:
+            n = str(it.get("n", ""))
+            if (q and q not in n.lower()) or (src != "all" and it.get("s") != src):
+                continue
+            v = str(it.get("v", ""))
+            if okey is not None and (not v or not vkey(v) < okey):
+                continue  # у программы без версии сравнивать нечего
+            a = apps.setdefault(n.lower(), {"name": n, "sources": set(), "vers": {}})
+            a["sources"].add(it.get("s", ""))
+            hs = a["vers"].setdefault(v, [])
+            if not any(h["id"] == r["id"] for h in hs):
+                hs.append({"id": r["id"], "name": r["name"]})
+    out = []
+    for a in apps.values():
+        vers = sorted(a["vers"].items(), key=lambda kv: vkey(kv[0]), reverse=True)
+        hosts = {h["id"] for _, hs in vers for h in hs}
+        out.append({"name": a["name"], "sources": sorted(a["sources"]), "hosts": len(hosts),
+                    "versions": [{"v": v, "hosts": hs} for v, hs in vers]})
+    out.sort(key=lambda a: (-a["hosts"], a["name"].lower()))
+    return JSONResponse({"at": newest or None, "hosts_total": total, "hosts_with_data": with_data,
+                         "apps": out[:lim], "truncated": len(out) > lim})
+
+
 async def host_software_refresh(request: Request):
     u, e = need(request, "operator")
     if e:
@@ -1178,6 +1230,7 @@ app = Starlette(
         Route("/api/hosts/{id}/profile", host_profile_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions", exception_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions/{check}", exception_delete, methods=["DELETE"]),
+        Route("/api/software/search", software_search),
         Route("/api/hosts/{id}/software", host_software),
         Route("/api/hosts/{id}/software/refresh", host_software_refresh, methods=["POST"]),
         Route("/api/hosts/{id}", host_delete, methods=["DELETE"]),

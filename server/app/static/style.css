@@ -270,3 +270,9 @@ tr.off { opacity: .7; } .c-cb { width: 44px; } .cell-host { display: flex; align
 .exp { margin: 16px 0; } .exp-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; } .exp-late { color: var(--fail); font-weight: 600; }
 .report .rep-host { margin: 24px 0; break-inside: avoid; } .report .rep-host h2 { display: flex; align-items: center; gap: 10px; } .report .table { width: 100%; border-collapse: collapse; } .report th, .report td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line, #8883); vertical-align: top; }
 @media print { .topbar, .no-print, .toast-box { display: none !important; } body { background: #fff !important; color: #000 !important; } .page { max-width: none; padding: 0; } .report .rep-host { break-inside: avoid; page-break-inside: avoid; } .badge { border: 1px solid #999; background: #fff !important; color: #000 !important; } .muted { color: #444 !important; } }
+
+.apps .input.narrow { max-width: 240px; border-radius: 999px; } .app-card { padding: 14px 18px; margin-bottom: 12px; } .app-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.app-vers { margin-top: 8px; display: grid; gap: 6px; } .app-ver { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; } .app-ver .ver { min-width: 110px; font-weight: 600; } .app-hosts { display: flex; gap: 6px; flex-wrap: wrap; }
+a.host-chip { text-decoration: none; color: var(--accent, #0a84ff); } a.host-chip:hover { text-decoration: underline; }
+
+@media (max-width: 520px) { .nav { gap: 2px; } .nav-item { padding: 7px 9px; gap: 0; font-size: 14px; } .nav-item .ico, .nav-item svg { display: none; } }

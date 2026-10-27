@@ -209,6 +209,7 @@
       el("nav", { class: "nav", "aria-label": T("top.menu") },
         nav("#/", "nav.home", "home", route.name === "home"),
         nav("#/hosts", "nav.hosts", "grid", route.name === "hosts" || route.name === "host"),
+        nav("#/apps", "nav.apps", "apps", route.name === "apps"),
         nav("#/report", "nav.report", "shield", route.name === "report"),
         me && me.role === "admin" ? nav("#/audit", "nav.audit", "book", route.name === "audit") : null),
       el("span", { class: "spacer" }),
@@ -1029,6 +1030,61 @@
     return page;
   }
 
+  // --- поиск ПО по всему парку -----------------------------------------------------------------------------------------
+  const appsState = { q: "", older: "", src: "all" };
+  function appsView() {
+    const page = el("main", { class: "page apps" });
+    const body = el("div", {}), count = el("span", { class: "muted small" }), note = el("span", { class: "muted small" });
+    let data = null, seq = 0, tm = null;
+    const SHOW = 100;
+    const csv = () => {
+      if (!data) return;
+      const rows = [[T("apps.col.app"), T("apps.col.version"), T("apps.col.source"), T("apps.col.host")]];
+      for (const a of data.apps) for (const v of a.versions) for (const h of v.hosts) rows.push([a.name, v.v, a.sources.map((x) => T("sw.src." + x)).join(", "), h.name]);
+      downloadCsv(`hostdeck-software-${stamp()}.csv`, rows);
+    };
+    const draw = () => {
+      if (!data) { body.replaceChildren(el("p", { class: "muted" }, T("common.loading"))); return; }
+      note.textContent = T("apps.nodata", { a: data.hosts_with_data, b: data.hosts_total });
+      count.textContent = T("apps.found", { n: data.apps.length + (data.truncated ? "+" : "") });
+      if (!data.apps.length) {
+        body.replaceChildren(el("div", { class: "empty" }, icon("apps", 40), el("h3", {}, T("apps.none")), el("p", { class: "muted" }, T("apps.none.d"))));
+        return;
+      }
+      const shown = data.apps.slice(0, SHOW);
+      body.replaceChildren(...shown.map((a) => el("div", { class: "card app-card" },
+        el("div", { class: "app-head" }, el("strong", {}, a.name), ...a.sources.map((x) => chip(x === "app" ? "apps" : "download", T("sw.src." + x))), el("span", { class: "spacer" }), el("span", { class: "muted small" }, T("apps.hosts", { n: a.hosts }))),
+        el("div", { class: "app-vers" }, ...a.versions.map((v) => el("div", { class: "app-ver" }, el("span", { class: "mono ver" }, v.v || "—"),
+          el("span", { class: "app-hosts" }, ...v.hosts.map((h) => el("a", { class: "chip host-chip", href: "#/host/" + h.id }, h.name)))))))),
+        ...(data.apps.length > SHOW || data.truncated ? [el("p", { class: "muted small" }, T("apps.more", { n: SHOW }))] : []));
+    };
+    const load = async () => {
+      const my = ++seq;
+      const qs = new URLSearchParams({ q: appsState.q.trim(), older: appsState.older.trim(), src: appsState.src });
+      try {
+        const r = await api("/api/software/search?" + qs.toString());
+        if (my !== seq) return;
+        data = r;
+      } catch (e) { if (my === seq) { fail(e); data = { apps: [], hosts_total: 0, hosts_with_data: 0 }; } }
+      draw();
+    };
+    const later = () => { clearTimeout(tm); tm = setTimeout(load, 250); };
+    const q = el("input", { class: "input", type: "search", placeholder: T("apps.q"), "aria-label": T("apps.q"), value: appsState.q });
+    q.addEventListener("input", () => { appsState.q = q.value; later(); });
+    const older = el("input", { class: "input narrow", type: "text", placeholder: T("apps.older"), "aria-label": T("apps.older"), value: appsState.older });
+    older.addEventListener("input", () => { appsState.older = older.value; later(); });
+    const srcs = ["all", "app", "brew", "cask", "pkg"].map((s) => ({ value: s, label: T("sw.src." + s) }));
+    page.append(
+      el("div", { class: "page-head" }, el("div", {}, el("h1", {}, T("apps.title")), el("p", { class: "muted" }, T("apps.sub")))),
+      el("div", { class: "toolbar" }, el("div", { class: "search-wrap" }, icon("search", 16), q), older,
+        select(srcs, appsState.src, (v) => { appsState.src = v; load(); }, { icon: "sliders", label: T("sw.source") }), count, el("span", { class: "spacer" }), note,
+        button(T("apps.csv"), { icon: "download", onclick: csv })),
+      body);
+    draw();
+    load();
+    return page;
+  }
+
   // --- маршрутизация ------------------------------------------------------------------------------------------------------------------------
   function parseRoute() {
     const h = location.hash.replace(/^#/, "") || "/";
@@ -1038,9 +1094,10 @@
     if (p[0] === "host" && p[1]) return { name: "host", id: p[1] };
     if (p[0] === "audit") return { name: "audit" };
     if (p[0] === "report") return { name: "report" };
+    if (p[0] === "apps") return { name: "apps" };
     return { name: "home" };
   }
-  const TITLES = { home: "nav.home", hosts: "nav.hosts", audit: "nav.audit", report: "nav.report" };
+  const TITLES = { home: "nav.home", hosts: "nav.hosts", audit: "nav.audit", report: "nav.report", apps: "nav.apps" };
 
   async function refreshHosts() {
     try { hosts = await api("/api/hosts"); } catch (e) { fail(e); }
@@ -1072,6 +1129,7 @@
       case "host": view = hostView(route.id); break;
       case "audit": view = me.role === "admin" ? auditView() : homeView(); break;
       case "report": view = reportView(); break;
+      case "apps": view = appsView(); break;
       default: view = homeView();
     }
     root.replaceChildren(topbar(route), view);

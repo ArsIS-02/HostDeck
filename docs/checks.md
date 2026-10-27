@@ -6,7 +6,7 @@
 
 ## macOS
 
-### Disk encryption (FileVault) (`filevault`)
+### Шифрование диска (FileVault) (`filevault`)
 
 FileVault шифрует весь диск. Без пароля пользователя данные нельзя прочитать, даже вынув накопитель.
 
@@ -21,7 +21,7 @@ FileVault шифрует весь диск. Без пароля пользова
 sudo fdesetup enable
 ```
 
-### SIP (system integrity) (`sip`)
+### SIP (защита системы) (`sip`)
 
 SIP (System Integrity Protection) не даёт менять системные файлы и процессы даже root-у.
 
@@ -53,7 +53,7 @@ sudo spctl --global-enable
 sudo spctl --master-enable   # для macOS 14 и старше
 ```
 
-### Firewall (`firewall`)
+### Брандмауэр (`firewall`)
 
 Встроенный брандмауэр macOS. Он решает, каким программам разрешены входящие сетевые подключения.
 
@@ -67,7 +67,7 @@ sudo spctl --master-enable   # для macOS 14 и старше
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
 ```
 
-### Stealth mode (`stealth`)
+### Режим невидимки (`stealth`)
 
 «Режим невидимки» — опция брандмауэра. Включённый, он заставляет Mac молчать в ответ на ping (ICMP) и на попытки подключиться к закрытым портам, поэтому сканеры портов и случайные «стуки» в сеть не видят, что хост вообще есть.
 
@@ -81,7 +81,7 @@ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
 ```
 
-### Automatic update check (`auto_check`)
+### Автопроверка обновлений (`auto_check`)
 
 Автоматическая проверка обновлений: macOS сама сверяется с серверами Apple.
 
@@ -95,7 +95,7 @@ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on
 sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticCheckEnabled -bool true
 ```
 
-### Automatic security updates (`auto_critical`)
+### Автоустановка обновлений безопасности (`auto_critical`)
 
 Автоматическая установка файлов безопасности и срочных исправлений («Быстрые меры безопасности»).
 
@@ -109,7 +109,7 @@ sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticCheck
 sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall -bool true
 ```
 
-### macOS updates (`updates`)
+### Обновления macOS (`updates`)
 
 Есть ли для Mac непоставленные обновления macOS и программ Apple. Проверку агент запускает в фоне, она может идти несколько минут.
 
@@ -124,7 +124,7 @@ sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdate
 sudo softwareupdate -i -a
 ```
 
-### Screen lock (`screenlock`)
+### Блокировка экрана (`screenlock`)
 
 Через сколько после засыпания или заставки экран блокируется и требует пароль.
 
@@ -134,7 +134,7 @@ sudo softwareupdate -i -a
 
 - Системные настройки → Экран блокировки → «Запрашивать пароль после начала заставки или выключения дисплея» → «Сразу».
 
-### Remote login (SSH) (`ssh`)
+### Удалённый вход (SSH) (`ssh`)
 
 Удалённый вход (SSH) позволяет подключаться к Mac по сети из терминала.
 
@@ -149,13 +149,13 @@ sudo softwareupdate -i -a
 sudo systemsetup -setremotelogin off
 ```
 
-### MDM enrollment (`mdm`)
+### Регистрация в MDM (`mdm`)
 
 Управляется ли Mac через MDM (централизованное управление устройствами организации).
 
 **Чем опасно.** Это справочная отметка. Для домашнего Mac без MDM «не зарегистрирован» — нормально.
 
-### Free disk space (`disk`)
+### Свободное место на диске (`disk`)
 
 Сколько места занято на системном диске. Предупреждение с 85%, ошибка с 95%.
 
@@ -171,13 +171,13 @@ sudo systemsetup -setremotelogin off
 du -xhd1 /Users | sort -h | tail -15
 ```
 
-### Platform (`platform`)
+### Платформа (`platform`)
 
 Для этой операционной системы агент собирает только базовые данные и метрики. Проверки безопасности macOS здесь не применяются.
 
 **Чем опасно.** 
 
-### Backup (Time Machine) (`timemachine`)
+### Резервная копия (Time Machine) (`timemachine`)
 
 Когда Time Machine в последний раз сделал резервную копию. Время берётся из настроек Time Machine. Копия не старше 7 дней — норма, старше 7 дней — предупреждение, старше 30 дней — ошибка.
 
@@ -197,7 +197,7 @@ sudo tmutil setdestination /Volumes/ИМЯ_ДИСКА
 sudo tmutil startbackup
 ```
 
-### Guest login (`guest`)
+### Гостевой вход (`guest`)
 
 Гостевой пользователь: любой может войти в Mac без пароля во временную учётную запись.
 
@@ -211,7 +211,7 @@ sudo tmutil startbackup
 sudo sysadminctl -guestAccount off
 ```
 
-### Automatic login (`autologin`)
+### Автоматический вход (`autologin`)
 
 Автоматический вход: после включения Mac сам входит в учётную запись без ввода пароля.
 
@@ -225,7 +225,7 @@ sudo sysadminctl -guestAccount off
 sudo defaults delete /Library/Preferences/com.apple.loginwindow autoLoginUser
 ```
 
-### Administrators (`admins`)
+### Администраторы (`admins`)
 
 Сколько пользователей входит в группу администраторов (root и служебные записи не считаются). Не больше двух — норма, больше — предупреждение. Имена показаны в карточке.
 
@@ -244,7 +244,7 @@ dscl . -read /Groups/admin GroupMembership
 sudo dseditgroup -o edit -d ИМЯ -t user admin   # убрать из администраторов
 ```
 
-### Screen sharing (`sharing_screen`)
+### Общий доступ к экрану (`sharing_screen`)
 
 Общий доступ к экрану (Screen Sharing, протокол VNC): другие компьютеры могут смотреть на экран и управлять им.
 
@@ -258,7 +258,7 @@ sudo dseditgroup -o edit -d ИМЯ -t user admin   # убрать из адми�
 sudo launchctl unload -w /System/Library/LaunchDaemons/com.apple.screensharing.plist
 ```
 
-### File sharing (`sharing_files`)
+### Общий доступ к файлам (`sharing_files`)
 
 Общий доступ к файлам (SMB): выбранные папки доступны по сети другим компьютерам.
 
@@ -272,7 +272,7 @@ sudo launchctl unload -w /System/Library/LaunchDaemons/com.apple.screensharing.p
 sudo launchctl unload -w /System/Library/LaunchDaemons/com.apple.smbd.plist
 ```
 
-### Remote management (`sharing_remote`)
+### Удалённое управление (`sharing_remote`)
 
 Удалённое управление (Apple Remote Desktop): администратор может управлять Mac с другого компьютера. Признак — запущенный процесс ARDAgent; у macOS нет единого флага, поэтому это эвристика.
 
@@ -300,7 +300,7 @@ sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resourc
 defaults write com.apple.sharingd DiscoverableMode -string "Contacts Only"   # от имени пользователя, не sudo
 ```
 
-### XProtect signatures (`xprotect`)
+### Сигнатуры XProtect (`xprotect`)
 
 Насколько свежи антивирусные сигнатуры самой macOS (XProtect). Apple обновляет их отдельно от системы. Возраст определяется по дате файлов набора: до 30 дней — норма, до 90 — предупреждение, больше — ошибка.
 
@@ -319,7 +319,7 @@ sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate ConfigDataInst
 sudo softwareupdate --background
 ```
 
-### Configuration profiles (`profiles`)
+### Профили конфигурации (`profiles`)
 
 Какие профили конфигурации установлены на Mac: MDM, Wi-Fi, сертификаты, ограничения. Для справки: профили могут менять настройки защиты и добавлять доверенные сертификаты.
 
@@ -334,7 +334,7 @@ sudo profiles list
 sudo profiles show
 ```
 
-### System extensions (`sysext`)
+### Системные расширения (`sysext`)
 
 Какие системные расширения активны: антивирусы, EDR, VPN, виртуализация и другие программы с доступом к системе на низком уровне.
 
@@ -348,7 +348,7 @@ sudo profiles show
 systemextensionsctl list
 ```
 
-### Display sleep (`display_sleep`)
+### Гашение дисплея (`display_sleep`)
 
 Через сколько минут простоя гаснет дисплей. До 15 минут — норма; «Никогда» или больше 15 минут — предупреждение.
 
@@ -362,7 +362,7 @@ systemextensionsctl list
 sudo pmset -a displaysleep 10
 ```
 
-### Screen saver (`screensaver`)
+### Заставка (`screensaver`)
 
 Через сколько простоя запускается заставка (у пользователя за экраном). До 20 минут — норма. Вместе с проверкой «Блокировка экрана» определяет, как быстро Mac закроется паролем.
 
@@ -376,7 +376,7 @@ sudo pmset -a displaysleep 10
 defaults -currentHost write com.apple.screensaver idleTime -int 600   # от имени пользователя, не sudo
 ```
 
-### Signed system volume (`ssv`)
+### Подписанный системный том (`ssv`)
 
 Подписанный системный том (Signed System Volume): защита системного раздела macOS от подмены. Проверяется командой csrutil authenticated-root status.
 
@@ -390,7 +390,7 @@ defaults -currentHost write com.apple.screensaver idleTime -int 600   # от и�
 csrutil authenticated-root enable   # выполняется в режиме восстановления
 ```
 
-### Update channel (`update_channel`)
+### Канал обновлений (`update_channel`)
 
 Канал, из которого Mac получает обновления (каталог Software Update). В адресе есть «seed»: Mac подписан на бета-версии macOS.
 
@@ -405,7 +405,7 @@ sudo softwareupdate --clear-catalog
 defaults read /Library/Preferences/com.apple.SoftwareUpdate CatalogURL
 ```
 
-### Network time (`net_time`)
+### Сетевое время (`net_time`)
 
 Синхронизируется ли время Mac с сервером времени (systemsetup). Неверное время ломает проверку сертификатов, Kerberos и сопоставление событий в журналах.
 
@@ -421,7 +421,7 @@ sudo systemsetup -setnetworktimeserver time.apple.com
 systemsetup -getnetworktimeserver
 ```
 
-### Internet Sharing (`internet_sharing`)
+### Общий интернет (Internet Sharing) (`internet_sharing`)
 
 Включён ли общий доступ к интернету: Mac раздаёт своё подключение другим устройствам и становится маршрутизатором.
 
@@ -435,7 +435,7 @@ systemsetup -getnetworktimeserver
 sudo defaults read /Library/Preferences/SystemConfiguration/com.apple.nat 2>&1 | head
 ```
 
-### Running network services (`net_daemons`)
+### Работающие сетевые службы (`net_daemons`)
 
 Сетевые службы, которые сейчас работают на Mac: SNMP, NoMachine, telnet, FTP. Это справка: служба может быть нужна, решение за вами.
 
@@ -456,7 +456,7 @@ sudo launchctl bootout system/org.net-snmp.snmpd
 sudo launchctl disable system/org.net-snmp.snmpd
 ```
 
-### sudo timeout (`sudo_timeout`)
+### Таймаут sudo (`sudo_timeout`)
 
 Сколько минут после ввода пароля sudo не спрашивает его снова (timestamp_timeout). По умолчанию 5.
 
@@ -472,7 +472,7 @@ sudo chmod 440 /etc/sudoers.d/hostdeck-timeout
 sudo visudo -c
 ```
 
-### BSM audit log (`audit_bsm`)
+### Журнал аудита BSM (`audit_bsm`)
 
 Классический журнал аудита BSM (/etc/security/audit_control). В современных версиях macOS он по умолчанию не настроен, события пишет унифицированный журнал, поэтому отсутствие файла не недостаток.
 
@@ -480,7 +480,7 @@ sudo visudo -c
 
 ## Linux
 
-### Accounts with UID 0 (`uid0`)
+### Учётные записи с UID 0 (`uid0`)
 
 Учётные записи с идентификатором 0, кроме root. UID 0 — это полные права администратора под другим именем.
 
@@ -500,7 +500,7 @@ sudo lastlog -u ИМЯ
 sudo userdel ИМЯ   # только после выяснения обстоятельств
 ```
 
-### Empty passwords (`empty_pw`)
+### Пустые пароли (`empty_pw`)
 
 Учётные записи, у которых в /etc/shadow пустое поле пароля, то есть вход без пароля.
 
@@ -519,7 +519,7 @@ sudo passwd ИМЯ
 sudo passwd -l ИМЯ   # заблокировать вход по паролю
 ```
 
-### Passwordless sudo (`sudo_nopasswd`)
+### sudo без пароля (`sudo_nopasswd`)
 
 Правила sudo с NOPASSWD: они позволяют выполнять команды от root без ввода пароля. Учитываются /etc/sudoers и /etc/sudoers.d.
 
@@ -535,7 +535,7 @@ sudo grep -rn NOPASSWD /etc/sudoers /etc/sudoers.d/
 sudo visudo -f /etc/sudoers.d/ИМЯ_ФАЙЛА
 ```
 
-### Password policy (`pw_policy`)
+### Политика паролей (`pw_policy`)
 
 Политика паролей: срок их действия (PASS_MAX_DAYS в /etc/login.defs) и минимальная длина (minlen в pwquality.conf или PASS_MIN_LEN). Норма: срок не больше 365 дней и длина не меньше 8.
 
@@ -555,7 +555,7 @@ echo 'minlen = 12' | sudo tee -a /etc/security/pwquality.conf
 sudo chage -M 365 ИМЯ   # для существующей записи
 ```
 
-### Open ports (`ports`)
+### Открытые порты (`ports`)
 
 Какие программы слушают порты на внешних адресах (loopback не считается). Пока вы не задали список разрешённых портов, проверка только показывает, что открыто. Когда список задан, любой другой порт считается лишним.
 
@@ -575,7 +575,7 @@ sudo nano /etc/hostdeck/agent.json   # "allowed_ports": [22, 443]
 sudo systemctl restart hostdeck-agent
 ```
 
-### Kernel hardening (`sysctl`)
+### Защитные параметры ядра (`sysctl`)
 
 Защитные параметры ядра: рандомизация адресов (ASLR, randomize_va_space=2), rp_filter, SYN-cookies, запрет принимать и отправлять ICMP-перенаправления и source routing, скрытие адресов ядра (kptr_restrict) и журнала ядра (dmesg_restrict), запрет дампов памяти setuid-программ (suid_dumpable=0). В карточке показаны отклонения.
 
@@ -600,7 +600,7 @@ EOF
 sudo sysctl --system
 ```
 
-### /tmp and /var/tmp mounts (`tmp_mount`)
+### Монтирование /tmp и /var/tmp (`tmp_mount`)
 
 Как смонтированы /tmp и /var/tmp. Рекомендация (CIS): отдельные разделы или tmpfs с параметрами nosuid, nodev и noexec.
 
@@ -616,7 +616,7 @@ echo '/tmp /var/tmp none bind 0 0' | sudo tee -a /etc/fstab
 sudo mount -a && findmnt /tmp /var/tmp
 ```
 
-### Disk health (SMART) (`smart`)
+### Здоровье дисков (SMART) (`smart`)
 
 Самодиагностика дисков SMART (smartctl -H). В виртуальных машинах SMART недоступен, и проверки не будет. Нужен пакет smartmontools.
 
@@ -635,7 +635,7 @@ sudo smartctl -a /dev/sda
 sudo smartctl -t short /dev/sda   # короткий тест диска
 ```
 
-### Audit rules (`audit_rules`)
+### Правила аудита (`audit_rules`)
 
 Загружены ли правила аудита ядра. Запущенная служба auditd без правил ничего не записывает.
 
@@ -656,7 +656,7 @@ sudo augenrules --load
 sudo auditctl -l
 ```
 
-### Log forwarding (`log_forward`)
+### Пересылка журналов (`log_forward`)
 
 Отправляет ли хост журналы на другой сервер: rsyslog или syslog-ng (например, в Graylog), journal-upload, audisp-remote, либо работает агент (Wazuh, Graylog Sidecar, Filebeat, Vector, Fluent Bit и др.). Проверяется наличие настройки и работающей службы, а не доставка сообщений: что они доходят, смотрите на стороне Graylog или Wazuh.
 
@@ -676,7 +676,7 @@ sudo systemctl restart rsyslog
 logger -t hostdeck-test "проверка пересылки"   # затем найдите сообщение в Graylog
 ```
 
-### Security updates (`sec_updates`)
+### Обновления безопасности (`sec_updates`)
 
 Сколько пакетов с обновлениями именно безопасности ждут установки (по данным уведомлений в репозиториях: dnf updateinfo, apt security). Критическая уязвимость делает проверку красной. «В репозиториях нет данных о безопасности» значит, что репозитории не публикуют уведомления, и отличить обновления безопасности от прочих нельзя: ориентируйтесь на проверку «Обновления пакетов».
 
@@ -696,7 +696,7 @@ sudo apt-get -s upgrade | grep -i security   # Debian, Ubuntu
 sudo unattended-upgrade
 ```
 
-### File integrity monitoring (`integrity`)
+### Контроль целостности файлов (`integrity`)
 
 Работает ли контроль целостности файлов: AIDE (есть база), IMA, Tripwire или Samhain. Он запоминает контрольные суммы системных файлов и замечает подмену.
 
@@ -713,7 +713,7 @@ sudo mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 sudo aide --check
 ```
 
-### FreeIPA domain and sssd (`freeipa`)
+### Домен FreeIPA и sssd (`freeipa`)
 
 Включён ли хост в домен FreeIPA и работает ли sssd. Если файла /etc/ipa/default.conf нет, проверка только справочная: хост вне домена. Если домен есть, проверяются sssd, keytab хоста (/etc/krb5.keytab) и связь с доменом (sssctl domain-status).
 
@@ -737,7 +737,7 @@ sudo klist -k /etc/krb5.keytab
 sudo ipa-client-install --force-join   # повторное включение в домен
 ```
 
-### Certificate expiry (`certs`)
+### Сроки сертификатов (`certs`)
 
 Сроки действия локальных сертификатов. Просматриваются типичные каталоги: /etc/letsencrypt/live, /etc/pki/tls/certs, /etc/pki/ca-trust/source/anchors, /usr/local/share/ca-certificates, /etc/ipa, /var/lib/ipa/certs. Общие пакеты доверенных центров (ca-bundle) не считаются. В карточке показан ближайший срок. Меньше 30 дней — предупреждение, истёкший сертификат — ошибка.
 
@@ -757,7 +757,7 @@ sudo certbot renew --dry-run
 sudo getcert list   # certmonger, FreeIPA
 ```
 
-### Firewall (`firewall`)
+### Брандмауэр (`firewall`)
 
 Менеджер брандмауэра хоста: firewalld (в RED OS и других дистрибутивах семейства RHEL) или ufw (Debian, Ubuntu). Он решает, какие входящие подключения пропускать.
 
@@ -776,7 +776,7 @@ sudo systemctl enable --now firewalld
 sudo ufw allow OpenSSH && sudo ufw enable   # для ufw
 ```
 
-### iptables / nftables rules (`iptables`)
+### Правила iptables / nftables (`iptables`)
 
 Сколько правил фильтрации загружено в ядро (iptables и nftables вместе) и какая политика у входящего трафика (INPUT). Firewalld хранит свои правила в nftables, поэтому считаются оба.
 
@@ -815,7 +815,7 @@ sudo sed -i 's/^SELINUX=.*/SELINUX=enforcing/' /etc/selinux/config
 sudo touch /.autorelabel && sudo reboot   # только если был Disabled
 ```
 
-### SSH server (sshd) (`sshd`)
+### SSH-сервер (sshd) (`sshd`)
 
 Настройки SSH-сервера (по выводу sshd -T): разрешён ли вход root и вход по паролю.
 
@@ -830,7 +830,7 @@ sudo touch /.autorelabel && sudo reboot   # только если был Disable
 sudo sshd -t && sudo systemctl reload sshd
 ```
 
-### Package updates (`pkg_updates`)
+### Обновления пакетов (`pkg_updates`)
 
 Есть ли доступные обновления пакетов (dnf в RED OS и других дистрибутивах семейства RHEL, apt в Debian и Ubuntu). Проверка идёт в фоне и может занять несколько минут.
 
@@ -848,7 +848,7 @@ sudo dnf upgrade -y
 sudo apt update && sudo apt upgrade -y   # Debian, Ubuntu
 ```
 
-### Reboot after updates (`reboot`)
+### Перезагрузка после обновлений (`reboot`)
 
 Нужна ли перезагрузка, чтобы применить обновлённые ядро или системные библиотеки.
 
@@ -863,7 +863,7 @@ sudo needs-restarting -r
 sudo reboot
 ```
 
-### Audit (auditd) (`auditd`)
+### Аудит (auditd) (`auditd`)
 
 Служба аудита ядра Linux: пишет в журнал входы, изменения файлов и системные вызовы по заданным правилам.
 
@@ -879,7 +879,7 @@ sudo augenrules --load
 sudo auditctl -l
 ```
 
-### Time synchronization (`time_sync`)
+### Синхронизация времени (`time_sync`)
 
 Синхронизировано ли время хоста с сервером времени (chrony, systemd-timesyncd).
 
@@ -895,7 +895,29 @@ sudo chronyc makestep
 timedatectl status
 ```
 
-### Failed systemd units (`failed_units`)
+### Контейнеры (Podman, Docker) (`containers`)
+
+Состояние контейнеров Podman и Docker на хосте: и от имени root, и от имени обычных пользователей (rootless Podman). Замечание появляется, если контейнер с политикой перезапуска always или unless-stopped остановлен с ошибкой или не стартовал, если контейнер нездоров (unhealthy), если пользовательская служба контейнера сбойная, а также если контейнеры с политикой always есть, а podman-restart.service выключен (после перезагрузки они не поднимутся). Ошибка (красный) ставится, когда контейнер перезапускается по кругу.
+
+**Чем опасно.** Остановленный после перезагрузки контейнер означает, что служба молча не работает: мониторинг, прокси или агент перестают отвечать, а хост выглядит исправным. Цикл перезапусков забивает журнал и нагружает хост. Лишняя копия того же контейнера (например, rootless-юнит рядом с системным) конфликтует по портам и создаёт тысячи ошибок.
+
+**Как исправить.**
+
+- Посмотрите журнал контейнера и причину остановки, затем запустите его.
+- Если контейнеры не поднимаются после перезагрузки, включите podman-restart.service.
+- Если сбойный юнит лишний (дубликат), уберите его описание, а не чините.
+
+```sh
+sudo podman ps -a
+sudo podman logs --tail 30 ИМЯ
+sudo podman start ИМЯ
+```
+
+```sh
+sudo systemctl enable --now podman-restart.service   # поднимать контейнеры с restart=always после перезагрузки
+```
+
+### Сбойные службы systemd (`failed_units`)
 
 Службы systemd, которые упали или не смогли запуститься. Первые названия указаны в карточке.
 
@@ -911,7 +933,7 @@ sudo journalctl -u ИМЯ.service -b --no-pager | tail -50
 sudo systemctl reset-failed
 ```
 
-### Disk encryption (LUKS) (`luks`)
+### Шифрование диска (LUKS) (`luks`)
 
 Зашифрован ли хотя бы один диск или раздел через LUKS (dm-crypt).
 
@@ -926,7 +948,7 @@ sudo systemctl reset-failed
 lsblk -f
 ```
 
-### Free disk space (`disk`)
+### Свободное место на диске (`disk`)
 
 Сколько места занято на системном диске. Предупреждение с 85%, ошибка с 95%.
 
@@ -945,7 +967,7 @@ sudo du -xhd1 / 2>/dev/null | sort -h | tail -15
 sudo dnf clean all; sudo journalctl --vacuum-size=200M
 ```
 
-### System crypto policy (`crypto_policy`)
+### Криптополитика системы (`crypto_policy`)
 
 Общая криптографическая политика системы (update-crypto-policies). Она задаёт, какие алгоритмы разрешены в sshd, TLS и других библиотеках. LEGACY оставляет SHA-1, CBC и 3DES для совместимости со старыми системами.
 
@@ -967,7 +989,7 @@ sudo update-crypto-policies --set LEGACY
 sudo systemctl restart sshd
 ```
 
-### SSH hardening (`ssh_hardening`)
+### Стойкость настроек SSH (`ssh_hardening`)
 
 Действующая конфигурация sshd (sshd -T): включён ли X11Forwarding, число попыток входа MaxAuthTries и слабые алгоритмы (CBC, 3DES, SHA-1 в обмене ключами).
 
@@ -991,7 +1013,7 @@ sudo sshd -T | grep -Ei 'x11forwarding|maxauthtries'
 sudo update-crypto-policies --set DEFAULT && sudo systemctl restart sshd
 ```
 
-### Lockout after failed logins (`lockout`)
+### Блокировка после неудачных входов (`lockout`)
 
 Блокируется ли учётная запись после нескольких неудачных входов (pam_faillock). Проверяются настройки PAM и файл /etc/security/faillock.conf.
 
@@ -1017,7 +1039,7 @@ sudo faillock --user ИМЯ --reset
 sudo faillock --user ИМЯ
 ```
 
-### auditd state (`audit_state`)
+### Состояние auditd (`audit_state`)
 
 Работает ли подсистема аудита ядра (auditctl -s): включена ли она и теряет ли события (счётчик lost).
 
@@ -1039,7 +1061,7 @@ sudo augenrules --load
 sudo auditctl -s | grep backlog_limit
 ```
 
-### Wazuh agent (`wazuh`)
+### Агент Wazuh (`wazuh`)
 
 Состояние агента Wazuh: связь с менеджером по данным wazuh-agentd.state (connected / pending / disconnected) и свежесть последнего ответа. Если ответа нет больше 10 минут, статус становится «Внимание».
 
@@ -1060,7 +1082,7 @@ sudo systemctl restart wazuh-agent
 sudo ss -tn | grep 1514   # соединение с менеджером
 ```
 
-### Persistent systemd journal (`journal`)
+### Постоянный журнал systemd (`journal`)
 
 Хранится ли журнал systemd на диске (есть каталог /var/log/journal). Без него журнал живёт в памяти и исчезает при перезагрузке.
 
@@ -1084,7 +1106,7 @@ printf '[Journal]\nSystemMaxUse=1G\n' | sudo tee /etc/systemd/journald.conf.d/si
 sudo systemctl restart systemd-journald
 ```
 
-### Legacy and extra services (`legacy_svc`)
+### Устаревшие и лишние службы (`legacy_svc`)
 
 Работающие устаревшие и лишние службы: telnet, rsh, rlogin, rexec, vsftpd, tftp (небезопасные, «Проблема») и cups, avahi-daemon (лишние на сервере, «Справка»).
 

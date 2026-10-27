@@ -359,6 +359,13 @@
         fix: ["Включите службу времени и принудительно подстройте часы."],
         cmd: "sudo systemctl enable --now chronyd\nsudo chronyc makestep\ntimedatectl status",
       },
+      containers: {
+        what: "Состояние контейнеров Podman и Docker на хосте: и от имени root, и от имени обычных пользователей (rootless Podman). Замечание появляется, если контейнер с политикой перезапуска always или unless-stopped остановлен с ошибкой или не стартовал, если контейнер нездоров (unhealthy), если пользовательская служба контейнера сбойная, а также если контейнеры с политикой always есть, а podman-restart.service выключен (после перезагрузки они не поднимутся). Ошибка (красный) ставится, когда контейнер перезапускается по кругу.",
+        risk: "Остановленный после перезагрузки контейнер означает, что служба молча не работает: мониторинг, прокси или агент перестают отвечать, а хост выглядит исправным. Цикл перезапусков забивает журнал и нагружает хост. Лишняя копия того же контейнера (например, rootless-юнит рядом с системным) конфликтует по портам и создаёт тысячи ошибок.",
+        fix: ["Посмотрите журнал контейнера и причину остановки, затем запустите его.", "Если контейнеры не поднимаются после перезагрузки, включите podman-restart.service.", "Если сбойный юнит лишний (дубликат), уберите его описание, а не чините."],
+        cmd: "sudo podman ps -a\nsudo podman logs --tail 30 ИМЯ\nsudo podman start ИМЯ",
+        cmd2: "sudo systemctl enable --now podman-restart.service   # поднимать контейнеры с restart=always после перезагрузки",
+      },
       failed_units: {
         what: "Службы systemd, которые упали или не смогли запуститься. Первые названия указаны в карточке.",
         risk: "Сбойная служба — это не работающая функция хоста или сигнал о проблеме.",
@@ -813,6 +820,13 @@
         risk: "A wrong clock breaks TLS certificates and Kerberos/FreeIPA, and timestamps in logs stop matching across hosts.",
         fix: ["Enable the time service and step the clock."],
         cmd: "sudo systemctl enable --now chronyd\nsudo chronyc makestep\ntimedatectl status",
+      },
+      containers: {
+        what: "State of Podman and Docker containers on the host, both as root and as ordinary users (rootless Podman). A warning appears when a container with restart policy always or unless-stopped is stopped with an error or never started, a container is unhealthy, a user container unit has failed, or containers with policy always exist while podman-restart.service is disabled (they will not come back after a reboot). An error (red) is raised when a container restarts in a loop.",
+        risk: "A container left stopped after a reboot means a service silently does not work: monitoring, a proxy or an agent stops answering while the host looks healthy. A restart loop floods the journal and loads the host. A duplicate of the same container (for example a rootless unit next to the system one) fights for ports and produces thousands of errors.",
+        fix: ["Read the container log and the reason it stopped, then start it.", "If containers do not come back after a reboot, enable podman-restart.service.", "If a failed unit is a duplicate, remove its definition instead of repairing it."],
+        cmd: "sudo podman ps -a\nsudo podman logs --tail 30 NAME\nsudo podman start NAME",
+        cmd2: "sudo systemctl enable --now podman-restart.service   # start containers with restart=always after a reboot",
       },
       failed_units: {
         what: "systemd units that crashed or failed to start. The first names are shown on the card.",

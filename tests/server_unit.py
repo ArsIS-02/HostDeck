@@ -47,5 +47,13 @@ for i in range(m.HISTORY_MAX_ROWS + 50):
     m.record_history("h1", P(z="ok"), P(z="warn"), time.time())
 ok(db.q1("SELECT COUNT(*) n FROM history WHERE host_id='h1'")["n"] <= m.HISTORY_MAX_ROWS, "история хоста ограничена по числу строк")
 
+# сравнение версий для поиска ПО
+ok(m.vkey("130.0.6723") < m.vkey("131.0"), "версии: 130.0.6723 < 131.0")
+ok(m.vkey("9.9") < m.vkey("10.1"), "версии сравниваются как числа: 9.9 < 10.1")
+ok(m.vkey("1.2.3") < m.vkey("1.2.10"), "версии: 1.2.3 < 1.2.10")
+ok(m.vkey("2.0") == m.vkey("2.0") and not (m.vkey("2.0") < m.vkey("2.0")), "равные версии не «старше»")
+ok(sorted(["1.10", "1.2", "1.9"], key=m.vkey) == ["1.2", "1.9", "1.10"], "сортировка версий по возрастанию")
+ok(m.vkey("") == [], "пустая версия даёт пустой ключ")
+
 print("\nИТОГО: %d/%d" % (sum(res), len(res)))
 sys.exit(0 if all(res) else 1)
