@@ -120,6 +120,16 @@ time.sleep(4)
 s,d,_=call("/api/hosts/"+hid)
 res.append(ok(d.get("software_count")==len(sw["items"]),"software_count в сводке хоста"))
 res.append(ok(call("/api/hosts/"+hid+"/software/refresh","POST",{},opener=anon)[0]==401,"запрос ПО без входа -> 401"))
+# поиск ПО по всему парку
+nm=sw["items"][0]["n"]
+s,r,_=call("/api/software/search?q="+urllib.parse.quote(nm[:6].lower()))
+res.append(ok(s==200 and any(a["name"]==nm and any(h["id"]==hid for v in a["versions"] for h in v["hosts"]) for a in r["apps"]),"поиск ПО: программа найдена по части названия (%s)"%nm))
+s,r,_=call("/api/software/search?q="+urllib.parse.quote(nm[:6])+"&older=99999999")
+res.append(ok(s==200 and any(a["name"]==nm for a in r["apps"]) or not sw["items"][0]["v"],"поиск ПО: условие «версия старше» находит более старые"))
+s,r,_=call("/api/software/search?q=zzzz-no-such-app")
+res.append(ok(s==200 and r["apps"]==[] and r["hosts_total"]>=1,"поиск ПО: пустой результат для неизвестного названия"))
+res.append(ok(call("/api/software/search?src=bad")[0]==400,"поиск ПО: неизвестный источник -> 400"))
+res.append(ok(call("/api/software/search?q=a",opener=anon)[0]==401,"поиск ПО без входа -> 401"))
 # терминал (root-консоль): сессия, ввод, вывод, закрытие
 import threading, base64
 res.append(ok(call("/api/hosts/"+hid+"/term","POST",{"cols":100,"rows":30},opener=anon)[0]==401,"терминал без входа -> 401"))

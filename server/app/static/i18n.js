@@ -4,6 +4,11 @@
   const ru = {
     "app.name": "HostDeck",
     "nav.home": "Обзор", "nav.hosts": "Хосты", "nav.audit": "Журнал",
+    "nav.apps": "ПО", "apps.title": "Поиск ПО по парку", "apps.sub": "Где установлена программа и какой версии: по всем хостам сразу. Списки ПО агенты присылают раз в сутки.",
+    "apps.q": "Название программы", "apps.older": "Версия старше (например 130.0)", "apps.found": "Найдено программ: {n}", "apps.hosts": "хостов: {n}",
+    "apps.none": "Ничего не найдено", "apps.none.d": "Попробуйте другое название или уберите условие по версии.", "apps.nodata": "Список ПО получен с {a} из {b} хостов",
+    "apps.more": "Показаны первые {n}: уточните запрос", "apps.csv": "Выгрузить CSV", "apps.col.app": "Программа", "apps.col.version": "Версия", "apps.col.source": "Источник", "apps.col.host": "Хост",
+    "check.containers": "Контейнеры (Podman, Docker)", "val.ctr_ok": "Работает контейнеров: {n}", "val.ctr_warn": "Замечаний по контейнерам: {n}", "val.ctr_loop": "Контейнер перезапускается по кругу",
     "top.theme": "Тема", "top.theme.auto": "Авто", "top.theme.light": "Светлая", "top.theme.dark": "Тёмная",
     "top.lang": "Язык", "top.logout": "Выйти", "top.menu": "Меню",
     "login.title": "Вход в HostDeck", "login.sub": "Инвентаризация и состояние вашего парка хостов",
@@ -131,6 +136,11 @@
 
   const en = {
     "nav.home": "Overview", "nav.hosts": "Hosts", "nav.audit": "Audit log",
+    "nav.apps": "Software", "apps.title": "Software search across the fleet", "apps.sub": "Where a program is installed and which version, across all hosts at once. Agents send software lists once a day.",
+    "apps.q": "Program name", "apps.older": "Version older than (e.g. 130.0)", "apps.found": "Programs found: {n}", "apps.hosts": "hosts: {n}",
+    "apps.none": "Nothing found", "apps.none.d": "Try another name or remove the version condition.", "apps.nodata": "Software list received from {a} of {b} hosts",
+    "apps.more": "Showing the first {n}: refine the query", "apps.csv": "Export CSV", "apps.col.app": "Program", "apps.col.version": "Version", "apps.col.source": "Source", "apps.col.host": "Host",
+    "check.containers": "Containers (Podman, Docker)", "val.ctr_ok": "Containers running: {n}", "val.ctr_warn": "Container issues: {n}", "val.ctr_loop": "A container is restarting in a loop",
     "top.theme": "Theme", "top.theme.auto": "Auto", "top.theme.light": "Light", "top.theme.dark": "Dark",
     "top.lang": "Language", "top.logout": "Sign out", "top.menu": "Menu",
     "login.title": "Sign in to HostDeck", "login.sub": "Inventory and health of your hosts",

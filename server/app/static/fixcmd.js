@@ -66,6 +66,25 @@
       return [ds.map((d) => `sudo smartctl -a /dev/${d} | grep -Ei 'result|reallocated|pending|uncorrect|error'`).join("\n"),
         "# срочно: копия данных, затем замена диска\n" + ds.map((d) => `sudo smartctl -t short /dev/${d}`).join("\n")];
     },
+    containers(c) {
+      // detail: «работает/всего; элемент, элемент …»; элементы: имя: причина, имя@пользователь: причина, unit имя@пользователь failed, podman-restart.service disabled
+      const items = list(String(c.detail || "").replace(/^[^;]*;\s*/, ""));
+      const out = [];
+      const asUser = (u) => (u ? `sudo -u ${q(u)} env XDG_RUNTIME_DIR=/run/user/$(id -u ${q(u)}) ` : "sudo ");
+      for (const it of items.slice(0, 5)) {
+        let m;
+        if ((m = it.match(/^unit (\S+?)@(\S+) failed$/))) {
+          out.push(`# сбойная пользовательская служба ${m[1]} (${m[2]}): причина и состояние\n${asUser(m[2])}systemctl --user status ${q(m[1])} --no-pager\n${asUser(m[2])}journalctl --user -u ${q(m[1])} -n 40 --no-pager`);
+          out.push(`# если служба лишняя (дубликат системной), уберите её описание Quadlet и перечитайте конфигурацию\nls ~${m[2]}/.config/containers/systemd/\n${asUser(m[2])}systemctl --user daemon-reload`);
+        } else if ((m = it.match(/^([^:@\s]+)(?:@(\S+))?: (.+)$/))) {
+          const [, name, user, why] = m;
+          const base = `${asUser(user)}podman`;
+          out.push(`# ${name}: ${why}\n${base} logs --tail 30 ${q(name)}` + (/exited|not started/.test(why) ? `\n${base} start ${q(name)}` : "") + (/restart/.test(why) ? `\n${base} inspect ${q(name)} --format '{{.State.Status}} {{.RestartCount}} {{.State.ExitCode}}'` : ""));
+        }
+      }
+      if (items.some((x) => /podman-restart\.service disabled/.test(x))) out.push("# после перезагрузки контейнеры с restart=always сами не стартуют, пока служба выключена\nsudo systemctl enable --now podman-restart.service");
+      return out.length ? out : null;
+    },
     failed_units(c) {
       const us = list(c.detail).filter((u) => /\.(service|socket|timer|mount|path)$/.test(u) || /^[\w@.-]+$/.test(u));
       if (!us.length) return null;
