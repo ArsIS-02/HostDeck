@@ -38,6 +38,7 @@ try:
             pg.wait_for_selector(".hero")
             if scheme == "light":
                 ok(pg.inner_text("h1").startswith("Парк"), "обзор открывается после входа, язык русский")
+                ok(pg.locator(".brand .brand-ver").inner_text().startswith("v0."), "под логотипом показан номер релиза: " + pg.locator(".brand .brand-ver").inner_text())
             pg.screenshot(path=f"{OUT}/home-{scheme}.png", full_page=True)
             pg.goto(B + "/#/hosts"); pg.wait_for_selector(".host-card")
             ok(pg.locator(".host-card").count() == 4, f"[{scheme}] плитки: 4 карточки")
@@ -79,6 +80,17 @@ try:
                 ok(pg.locator(".hist .hist-chart").count() + pg.locator(".hist p.muted").count() >= 1, "вкладка «История» открывается: график или пояснение")
                 pg.click(".tabs .tab >> text=Состояние"); pg.wait_for_selector(".gauge")
                 ok(pg.locator(".host-head .select-cap", has_text="Профиль").count() == 1, "в заголовке хоста есть выбор профиля")
+                if scheme == "light":
+                    # приборы: мини-графики, период, индикатор режима
+                    pg.goto(B + "/#/host/demo01"); pg.wait_for_selector(".gauge")
+                    pg.wait_for_selector(".gauge .sp-line[d^='M']", timeout=15000)
+                    ok(pg.locator(".gauge .spark-box").count() >= 3, "приборы: под приборами есть мини-графики")
+                    ok(pg.locator(".gauge-tools .chip").count() == 1 and pg.locator(".gauge-tools .seg-item").count() == 4, "приборы: индикатор режима и 4 периода")
+                    pg.click(".gauge-tools .seg-item >> nth=3"); pg.wait_for_timeout(600)
+                    ok(pg.locator(".gauge .sp-line[d^='M']").count() >= 3, "приборы: период 24 ч перерисовывает графики")
+                    pg.click(".gauge-tools .seg-item >> nth=2"); pg.wait_for_timeout(900)
+                    pg.screenshot(path=f"{OUT}/gauges-live.png", clip={"x": 0, "y": 330, "width": 1280, "height": 480})
+                    pg.goto(B + "/#/hosts"); pg.wait_for_selector(".host-card"); pg.click(".host-card >> nth=0"); pg.wait_for_selector(".gauge")
                 if scheme == "light":
                     # вкладка «Контейнеры» (есть только у хоста, приславшего список)
                     pg.goto(B + "/#/host/demo03"); pg.wait_for_selector(".gauge")

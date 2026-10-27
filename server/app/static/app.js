@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const { el, svg, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast, tip } = window.UI;
+  const { el, svg, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, spark, dialog, confirmDialog, toast, tip } = window.UI;
   const T = (k, p) => window.I18N.t(k, p);
   const root = document.getElementById("root");
 
@@ -221,7 +221,7 @@
   function topbar(route) {
     const nav = (href, key, ic, active) => el("a", { href, class: "nav-item" + (active ? " active" : ""), "aria-current": active ? "page" : null }, icon(ic, 17), el("span", {}, T(key)));
     return el("header", { class: "topbar" },
-      el("a", { class: "brand", href: "#/" }, el("img", { class: "logo-img", src: "/static/logo.svg", alt: "", width: 32, height: 32 }), el("span", {}, "HostDeck")),
+      el("a", { class: "brand", href: "#/" }, el("img", { class: "logo-img", src: "/static/logo.svg", alt: "", width: 32, height: 32 }), el("span", { class: "brand-name" }, el("span", {}, "HostDeck"), me && me.version ? el("small", { class: "brand-ver", title: T("brand.ver.title") }, "v" + me.version) : null)),
       el("nav", { class: "nav", "aria-label": T("top.menu") },
         nav("#/", "nav.home", "home", route.name === "home"),
         nav("#/hosts", "nav.hosts", "grid", route.name === "hosts" || route.name === "host"),
@@ -589,26 +589,98 @@
   const swState = { q: "", src: "all", items: null, at: null, hostId: null };
   const ctrState = { q: "", f: "all" };
 
-  function gaugesRow(h) {
-    const x = metricsOf(h), m = x.m;
-    if (!m) return el("div", { class: "card empty-sm" }, icon("clock", 20), el("span", {}, T("host.metrics.none")));
-    const stale = !x.fresh;
-    const items = [
-      gauge({ value: x.cpu, text: Math.round(x.cpu) + "%", title: T("gauge.cpu"), ico: "cpu", stale, sub: `${m.cores} ${window.I18N.lang === "ru" ? "ядер" : "cores"}` }),
-      gauge({ value: x.mem, text: Math.round(x.mem || 0) + "%", title: T("gauge.mem"), ico: "memory", stale, sub: T("gauge.mem.sub", { u: gb(m.mem_used), t: gb(m.mem_total) }) }),
-      gauge({ value: x.disk, text: Math.round(x.disk || 0) + "%", title: T("gauge.disk"), ico: "disk", stale, sub: T("gauge.disk.sub", { f: gb(m.disk_free) }) }),
+  // --- живые приборы -----------------------------------------------------------------------------------------------------------------
+  // Пока открыта вкладка «Состояние», страница раз в 3 секунды просит у сервера свежие метрики; сервер просит агента слать их чаще (режим live).
+  const RANGES = [[900, "gauge.r15"], [3600, "gauge.r1h"], [21600, "gauge.r6h"], [86400, "gauge.r24h"]];
+  const live = { hostId: null, m: null, at: 0, ok: false, points: [], span: 900, refs: null, tick: null, busy: false, lastT: 0 };
+  const SPARK_IDX = { cpu: 1, mem: 2, disk: 3, load: 4 };
+  function liveReset(id) { Object.assign(live, { hostId: id, m: null, at: 0, ok: false, points: [], lastT: 0 }); }
+  function gaugeSpecs(m, stale) {
+    const mem = m.mem_total ? (m.mem_used / m.mem_total) * 100 : null;
+    const out = [
+      { key: "cpu", value: m.cpu, text: Math.round(m.cpu) + "%", title: T("gauge.cpu"), ico: "cpu", stale, sub: `${m.cores} ${window.I18N.lang === "ru" ? "ядер" : "cores"}` },
+      { key: "mem", value: mem, text: Math.round(mem || 0) + "%", title: T("gauge.mem"), ico: "memory", stale, sub: T("gauge.mem.sub", { u: gb(m.mem_used), t: gb(m.mem_total) }) },
+      { key: "disk", value: m.disk_pct, text: Math.round(m.disk_pct || 0) + "%", title: T("gauge.disk"), ico: "disk", stale, sub: T("gauge.disk.sub", { f: gb(m.disk_free) }) },
     ];
     if (m.battery >= 0) {
-      items.push(gauge({ value: m.battery, text: Math.round(m.battery) + "%", title: T("gauge.battery"), ico: "battery", stale,
+      out.push({ key: "battery", value: m.battery, text: Math.round(m.battery) + "%", title: T("gauge.battery"), ico: "battery", stale,
         level: m.battery <= 15 && !m.battery_chrg ? "fail" : m.battery <= 30 && !m.battery_chrg ? "warn" : "ok",
-        sub: m.battery_chrg ? T("gauge.battery.sub.chg") : T("gauge.battery.sub.dis") }));
+        sub: m.battery_chrg ? T("gauge.battery.sub.chg") : T("gauge.battery.sub.dis") });
     } else {
       const lp = Math.min(100, (m.load1 / Math.max(1, m.cores)) * 100);
-      items.push(gauge({ value: lp, text: m.load1.toFixed(1), title: T("gauge.load"), ico: "refresh", stale, sub: T("gauge.load.sub", { v: m.load1.toFixed(2), c: m.cores }) }));
+      out.push({ key: "load", value: lp, text: m.load1.toFixed(1), title: T("gauge.load"), ico: "refresh", stale, sub: T("gauge.load.sub", { v: m.load1.toFixed(2), c: m.cores }) });
     }
+    return out;
+  }
+  function liveFresh(h) {
+    const at = live.hostId === h.id && live.at > (h.metrics_at || 0) ? live.at : h.metrics_at || 0;
+    return h.online && Date.now() / 1000 - at < 180;
+  }
+  function drawSparks() {
+    if (!live.refs) return;
+    const t1 = Date.now() / 1000, t0 = t1 - live.span;
+    for (const [k, r] of Object.entries(live.refs)) if (r.spark) r.spark.set(live.points.map((p) => [p[0], p[SPARK_IDX[k]]]), t0, t1);
+  }
+  async function loadHistory(h) {
+    try {
+      const r = await api(`/api/hosts/${h.id}/metrics/history?span=${live.span}`);
+      if (live.hostId !== h.id) return;
+      live.points = r.points; live.lastT = r.points.length ? r.points[r.points.length - 1][0] : 0;
+      drawSparks();
+    } catch (e) { console.error("history", e); }
+  }
+  async function liveTick(h) {
+    if (live.busy || document.hidden || hostTab !== "state" || document.querySelector(".veil") || live.hostId !== h.id) return;
+    live.busy = true;
+    try {
+      const r = await api(`/api/hosts/${h.id}/live`, { method: "POST", body: { since: live.lastT } });
+      if (live.hostId !== h.id || hostTab !== "state") return;
+      live.ok = !!r.live;
+      if (r.metrics) { live.m = r.metrics; live.at = r.metrics_at || 0; }
+      for (const p of r.points) if (p[0] > live.lastT) { live.points.push(p); live.lastT = p[0]; }
+      const cut = Date.now() / 1000 - 86400;
+      while (live.points.length && live.points[0][0] < cut) live.points.shift();
+      if (live.refs && live.m) {
+        const cur = curHost && curHost.id === h.id ? curHost : h, fresh = liveFresh(cur);
+        for (const sp of gaugeSpecs(live.m, !fresh)) if (live.refs[sp.key]) live.refs[sp.key].fig.update(sp);
+        if (live.refs.chip) live.refs.chip.replaceWith((live.refs.chip = liveChip(cur)));
+        drawSparks();
+      }
+    } catch (e) { console.error("liveTick", e); } finally { live.busy = false; }
+  }
+  function liveChip(h) {
+    const on = live.ok && liveFresh(h) && Date.now() / 1000 - live.at < 20;
+    const c = el("span", { class: "chip " + (on ? "c-live" : "") }, on ? el("span", { class: "live-dot" }) : icon("clock", 14), el("span", {}, on ? T("gauge.live") : live.ok ? T("gauge.live.wait") : T("gauge.live.old")));
+    return c;
+  }
+  function liveStart(h) {
+    liveStop();
+    if (live.hostId !== h.id) liveReset(h.id);
+    live.tick = setInterval(() => liveTick(h), 3000);
+    loadHistory(h).then(() => liveTick(h));
+  }
+  function liveStop() { if (live.tick) { clearInterval(live.tick); live.tick = null; } }
+
+  function gaugesRow(h) {
+    const useLive = live.hostId === h.id && live.m && live.at > (h.metrics_at || 0);
+    const m = useLive ? live.m : h.metrics;
+    if (!m) return el("div", { class: "card empty-sm" }, icon("clock", 20), el("span", {}, T("host.metrics.none")));
+    const fresh = liveFresh(h), stale = !fresh;
+    const refs = {};
+    const items = gaugeSpecs(m, stale).map((sp) => {
+      const fig = gauge(sp);
+      refs[sp.key] = { fig };
+      if (SPARK_IDX[sp.key]) { refs[sp.key].spark = window.UI.spark(); fig.append(refs[sp.key].spark); }
+      return fig;
+    });
+    refs.chip = liveChip(h);
+    live.refs = refs;
+    const range = segmented(RANGES.map(([v, k]) => ({ value: v, text: T(k) })), live.span, (v) => { live.span = v; loadHistory(h); }, T("gauge.range"));
+    queueMicrotask(() => { if (live.refs === refs && live.hostId === h.id) drawSparks(); });
     return el("div", null,
+      el("div", { class: "gauge-tools" }, refs.chip, el("span", { class: "spacer" }), range),
       el("div", { class: "gauges" }, items),
-      stale ? el("p", { class: "muted small stale" }, icon("clock", 14), " ", T("host.stale") + " · " + ago(h.metrics_at)) : null,
+      stale ? el("p", { class: "muted small stale" }, icon("clock", 14), " ", T("host.stale") + " · " + ago(useLive ? live.at : h.metrics_at)) : null,
       m.swap_pct > 0 ? el("div", { class: "swap" }, progress(m.swap_pct, { label: T("gauge.swap"), text: Math.round(m.swap_pct) + "%" })) : null);
   }
 
@@ -812,7 +884,7 @@
     const content = hostTab === "software" ? softwareTab(h) : hostTab === "containers" && h.containers_count != null ? containersTab(h) : hostTab === "history" ? historyTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
     hostBox.replaceChildren(
       el("div", { class: "tabs", role: "tablist" }, tabs.map(([k, key, ic]) => el("button", { role: "tab", class: "tab" + (hostTab === k ? " active" : ""), "aria-selected": String(hostTab === k),
-        onclick: async () => { hostTab = k; if (k === "software" && swState.hostId !== h.id) { swState.items = null; drawHostBody(); await loadSoftware(h); } drawHostBody(); } },
+        onclick: async () => { hostTab = k; if (k === "software" && swState.hostId !== h.id) { swState.items = null; drawHostBody(); await loadSoftware(h); } drawHostBody(); if (k === "state") liveStart(h); else liveStop(); } },
         icon(ic, 16), el("span", {}, T(key))))),
       content);
   }
@@ -848,6 +920,7 @@
           } }) : null].filter(Boolean));
         if (hostTab === "software" && swState.hostId !== id) await loadSoftware(h);
         drawHostBody();
+        if (hostTab === "state") liveStart(curHost || h);
       } catch (e) {
         if (e.message !== "auth") hostBox.replaceChildren(el("div", { class: "empty" }, icon("alert", 40), el("h3", {}, e.message)));
       }
@@ -1180,7 +1253,7 @@
   async function refreshHosts() {
     try { hosts = await api("/api/hosts"); } catch (e) { fail(e); }
   }
-  function clearTimer() { if (timer) { clearInterval(timer); timer = null; } }
+  function clearTimer() { if (timer) { clearInterval(timer); timer = null; } liveStop(); }
 
   async function renderAll() {
     clearTimer();

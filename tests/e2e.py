@@ -1,6 +1,6 @@
 """Сквозной тест HostDeck: поднимает сервер на свободном порту, регистрирует и запускает агента.
 Запуск: python3 tests/e2e.py <путь к собранному агенту>"""
-import json, os, secrets, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request, http.cookiejar
+import json, os, re, secrets, socket, subprocess, sys, tempfile, time, urllib.error, urllib.request, http.cookiejar
 
 AGENT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "dist/hostdeck-agent-test")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -113,6 +113,17 @@ res.append(ok(d["posture_at"]>t0,"команда «обновить» дошла
 # метрики и ПО
 s,d,_=call("/api/hosts/"+hid)
 res.append(ok(d.get("metrics") and d["metrics"].get("cores",0)>=1 and "mem_total" in d["metrics"],"метрики для приборов получены"))
+# живой режим приборов: агент 0.7.0 по просьбе сервера шлёт метрики каждые ~4 секунды
+s,lv,_=call("/api/hosts/"+hid+"/live","POST",{})
+res.append(ok(s==200 and lv.get("live") is True and lv.get("metrics"),"живой режим: ответ с метриками, агент поддерживает live"))
+at0=lv["metrics_at"]; time.sleep(11)
+s,lv,_=call("/api/hosts/"+hid+"/live","POST",{"since":at0})
+res.append(ok(lv["metrics_at"]>at0+4 and len(lv["points"])>=2,"живой режим: за 11 секунд пришло несколько новых точек (%d)"%len(lv["points"])))
+s,hist,_=call("/api/hosts/"+hid+"/metrics/history?span=900")
+res.append(ok(s==200 and len(hist["points"])>=3 and len(hist["points"][0])==5,"история метрик: точки cpu/mem/disk/load"))
+res.append(ok(call("/api/hosts/nope/live","POST",{})[0]==404,"живой режим: неизвестный хост -> 404"))
+s,me_,_=call("/api/me")
+res.append(ok(re.fullmatch(r"\d+\.\d+\.\d+",me_.get("version","")) is not None,"версия сервера отдаётся в /api/me: "+str(me_.get("version"))))
 s,sw,_=call("/api/hosts/"+hid+"/software")
 res.append(ok(s==200 and len(sw["items"])>0 and sw["at"],"список ПО получен: %d"%len(sw["items"])))
 call("/api/hosts/"+hid+"/software/refresh","POST",{})

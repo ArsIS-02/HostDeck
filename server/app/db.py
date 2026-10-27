@@ -32,6 +32,9 @@ CREATE INDEX IF NOT EXISTS history_host ON history(host_id, ts);
 CREATE TABLE IF NOT EXISTS idx_points(
   host_id TEXT NOT NULL, ts REAL NOT NULL, idx INTEGER, worst TEXT);
 CREATE INDEX IF NOT EXISTS idx_points_host ON idx_points(host_id, ts);
+CREATE TABLE IF NOT EXISTS metric_points(
+  host_id TEXT NOT NULL, ts REAL NOT NULL, cpu REAL, mem REAL, disk REAL, load REAL);
+CREATE INDEX IF NOT EXISTS metric_points_host ON metric_points(host_id, ts);
 CREATE TABLE IF NOT EXISTS audit(
   id INTEGER PRIMARY KEY, ts REAL NOT NULL, actor TEXT, host TEXT, action TEXT NOT NULL, detail TEXT);
 """

@@ -1,6 +1,11 @@
 package main
 
-import "runtime"
+import (
+	"runtime"
+	"sync"
+)
+
+var metricsMu sync.Mutex // обычный и живой сборщики не должны одновременно считать загрузку процессора
 
 // Metrics — быстрые показатели для приборов; собираются раз в минуту и отдельно от проверок.
 type Metrics struct {
@@ -19,6 +24,8 @@ type Metrics struct {
 }
 
 func collectMetrics() Metrics {
+	metricsMu.Lock()
+	defer metricsMu.Unlock()
 	m := Metrics{At: nowUnix(), Cores: runtime.NumCPU(), Battery: -1}
 	if t, f, ok := diskUsage("/"); ok && t > 0 {
 		m.DiskTotal, m.DiskFree, m.DiskPct = t, f, (t-f)/t*100
