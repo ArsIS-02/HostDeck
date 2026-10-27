@@ -87,14 +87,16 @@ res.append(ok(r.returncode==0 and "DRYRUN" in r.stdout,"режим с CA: сум
 # агент
 env=dict(os.environ); cfg=os.path.join(tmp,"agent.json")
 if os.path.exists(cfg): os.remove(cfg)
-r=subprocess.run([AGENT,"enroll","-server",B,"-token",tok,"-name","sandbox-linux","-terminal","-config",cfg],capture_output=True,text=True)
+r=subprocess.run([AGENT,"enroll","-server",B,"-token",tok,"-name","sandbox-linux","-terminal","-containers","-config",cfg],capture_output=True,text=True)
 res.append(ok(r.returncode==0,"агент зарегистрирован: "+r.stdout.strip()))
 res.append(ok(oct(os.stat(cfg).st_mode&0o777)=="0o600","конфиг агента 0600"))
 r2=subprocess.run([AGENT,"enroll","-server",B,"-token",tok,"-name","dup","-config",os.path.join(tmp,"dup.json")],capture_output=True,text=True)
 res.append(ok(r2.returncode!=0,"повторное использование токена отклонено"))
 r3=subprocess.run([AGENT,"enroll","-server","http://example.com","-token","x","-config",os.path.join(tmp,"dup.json")],capture_output=True,text=True)
 res.append(ok(r3.returncode!=0 and "https" in r3.stderr,"агент не работает по голому http вне localhost"))
-ag=subprocess.Popen([AGENT,"run","-config",cfg],stdout=open(os.path.join(tmp,"agent.log"),"w"),stderr=subprocess.STDOUT)
+FAKE=os.path.join(ROOT,"tests","fakebin"); FST=os.path.join(tmp,"fake-podman.json")
+aenv=dict(os.environ,PATH=FAKE+os.pathsep+os.environ["PATH"],FAKE_PODMAN_STATE=FST)   # поддельные podman и systemctl: агент управляет «контейнерами»
+ag=subprocess.Popen([AGENT,"run","-config",cfg],env=aenv,stdout=open(os.path.join(tmp,"agent.log"),"w"),stderr=subprocess.STDOUT)
 time.sleep(4)
 s,hosts,_=call("/api/hosts")
 res.append(ok(s==200 and len(hosts)==1 and hosts[0]["online"] and hosts[0]["posture_at"],"хост в списке, на связи, отчёт получен"))
@@ -124,6 +126,50 @@ res.append(ok(s==200 and len(hist["points"])>=3 and len(hist["points"][0])==5,"�
 res.append(ok(call("/api/hosts/nope/live","POST",{})[0]==404,"живой режим: неизвестный хост -> 404"))
 s,me_,_=call("/api/me")
 res.append(ok(re.fullmatch(r"\d+\.\d+\.\d+",me_.get("version","")) is not None,"версия сервера отдаётся в /api/me: "+str(me_.get("version"))))
+# управление контейнерами и образами (поддельный podman): включено флагом -containers, доступно только admin
+def ctr_list():
+    s_,d_,_=call("/api/hosts/"+hid); return {c["name"]:c for c in (d_.get("containers") or [])}
+def do_op(body, tmo=40):
+    s_,r_,_=call("/api/hosts/"+hid+"/ctr/op","POST",body)
+    if s_!=200: return s_,r_
+    t_=time.time()+tmo
+    while time.time()<t_:
+        s2,st,_=call("/api/hosts/"+hid+"/ctr/op/"+r_["op"])
+        if st and st.get("done"): return 200,st["result"]
+        time.sleep(0.7)
+    return 200,{"code":"never"}
+time.sleep(1)
+cl=ctr_list()
+res.append(ok(set(cl)>={"web","live","svc"} and cl["web"]["id"] and cl["svc"].get("unit")=="svc.service","контейнеры: список с ID и юнитом получен от агента"))
+s,d,_=call("/api/hosts/"+hid)
+res.append(ok(d["info"].get("containers_mgmt")=="on","контейнеры: на хосте включено управление (info.containers_mgmt)"))
+E=lambda name,act,**kw: dict({"action":act,"runtime":"podman","owner":"","id":cl[name]["id"],"name":name},**kw)
+res.append(ok(call("/api/hosts/"+hid+"/ctr/op","POST",E("web","start"),opener=anon)[0]==401,"контейнеры: без входа -> 401"))
+res.append(ok(call("/api/hosts/"+hid+"/ctr/op","POST",dict(E("web","start"),id="web"))[0]==400,"контейнеры: неверный идентификатор -> 400"))
+res.append(ok(call("/api/hosts/"+hid+"/ctr/op","POST",dict(E("web","start"),id="f"*12))[0]==404,"контейнеры: контейнера нет в отчёте хоста -> 404"))
+res.append(ok(call("/api/hosts/"+hid+"/ctr/op","POST",dict(E("web","start"),action="exec"))[0]==400,"контейнеры: неизвестное действие -> 400"))
+st_,r_=do_op(E("web","start"))
+res.append(ok(st_==200 and r_["ok"] and r_["code"]=="ok" and r_["state"]=="running","контейнеры: запуск выполнен и проверен (running)"))
+time.sleep(2); res.append(ok(ctr_list()["web"]["state"]=="running","контейнеры: список обновился после действия"))
+st_,r_=do_op(E("web","start")); res.append(ok(r_.get("code")=="already","контейнеры: повторный запуск — «уже работает»"))
+st_,r_=do_op(E("live","rm")); res.append(ok(not r_.get("ok") and r_.get("code")=="running","контейнеры: работающий не удаляется без stop_first"))
+st_,r_=do_op(E("live","rm",stop_first=True)); res.append(ok(r_.get("ok") and r_.get("state")=="gone","контейнеры: остановка и удаление выполнены"))
+time.sleep(2); res.append(ok("live" not in ctr_list(),"контейнеры: удалённого нет в списке"))
+st_,r_=do_op(E("svc","rm")); res.append(ok(r_.get("code")=="managed","контейнеры: контейнер юнита systemd не удаляется"))
+st_,r_=do_op(E("svc","stop")); res.append(ok(r_.get("ok") and r_.get("code")=="ok","контейнеры: остановка контейнера юнита идёт через systemctl"))
+st_,r_=do_op(E("web","stop")); res.append(ok(r_.get("ok"),"контейнеры: остановка"))
+# образы
+call("/api/hosts/"+hid+"/images/refresh","POST",{}); time.sleep(3)
+s,im,_=call("/api/hosts/"+hid+"/images")
+ids={i["full_id"][:1]:i for i in im["items"]}
+res.append(ok(len(im["items"])==3 and ids["a"]["used_by"] and not ids["c"]["used_by"],"образы: список с использованием получен"))
+imb=lambda *x: {"action":"img_rm","runtime":"podman","owner":"","images":[i["full_id"][:12] for i in x]}
+st_,r_=do_op(imb(ids["a"],ids["c"]))
+res.append(ok(r_.get("code")=="partial" and [x["code"] for x in r_["items"]]==["in_use","ok"] and r_.get("freed")==300,"образы: используемый остаётся, висячий удалён (освобождено 300 Б)"))
+res.append(ok(call("/api/hosts/"+hid+"/ctr/op","POST",{"action":"img_rm","runtime":"podman","owner":"","images":["-a"]})[0]==400,"образы: неверный идентификатор -> 400"))
+s,au,_=call("/api/audit")
+acts=[(r["action"],r["actor"]) for r in au["rows"]]
+res.append(ok(("ctr-start","admin") in acts and ("ctr-rm","admin") in acts and ("img-rm","admin") in acts,"журнал: действия с контейнерами и образами записаны с автором"))
 s,sw,_=call("/api/hosts/"+hid+"/software")
 res.append(ok(s==200 and len(sw["items"])>0 and sw["at"],"список ПО получен: %d"%len(sw["items"])))
 call("/api/hosts/"+hid+"/software/refresh","POST",{})

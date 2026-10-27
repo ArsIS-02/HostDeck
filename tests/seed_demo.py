@@ -48,25 +48,36 @@ for i, (name, model, chip, mem, ver, st, m) in enumerate(HOSTS):
             if c["id"] == "disk":
                 c.update(status="fail", num=91.0, detail="43.0")
     posture = {"collected_at": now, "info": {"os": "macOS" if mac else "linux", "os_version": ver, "model": model or "Raspberry Pi 4B", "chip": chip,
-               "memory": mem, "arch": "arm64", "hostname": name, "agent": "0.2.0", "boot_time": str(int(now - 86400 * (3 + i))), "console_user": "demo" if mac else "", **({"auto_update": "on"} if i != 3 else {})},
+               "memory": mem, "arch": "arm64", "hostname": name, "agent": "0.2.0", "boot_time": str(int(now - 86400 * (3 + i))), "console_user": "demo" if mac else "", **({"auto_update": "on"} if i != 3 else {"containers_mgmt": "on"})},
                "checks": ck if mac else [{"id": "platform", "status": "info", "value": "mac_only"}, ck[-1]]}
     if i == 3:  # у homeserver есть контейнеры: рабочие, упавший и дубликат в Docker
         posture["containers"] = [
-            {"name": "caddy", "image": "docker.io/library/caddy:2.8", "runtime": "podman", "owner": "redos", "state": "running", "restart": "always", "health": "healthy", "ports": ["0.0.0.0:80->80/tcp", "0.0.0.0:443->443/tcp"], "started": int(now - 10 * 86400)},
-            {"name": "atrium", "image": "localhost/atrium:1.0.0", "runtime": "podman", "owner": "redos", "state": "running", "restart": "always", "ports": ["0.0.0.0:5000->5000/tcp"], "started": int(now - 43 * 3600)},
-            {"name": "myhomelab-v6-old", "image": "localhost/myhomelab:v6", "runtime": "podman", "owner": "redos", "state": "exited", "exit": 137, "restart": "always", "ports": ["0.0.0.0:5000->5000/tcp"]},
-            {"name": "logatlas", "image": "localhost/logatlas:latest", "runtime": "podman", "state": "running", "restart": "unless-stopped", "health": "healthy", "started": int(now - 3 * 86400)},
-            {"name": "logatlas", "image": "logatlas:old", "runtime": "docker", "state": "exited", "exit": 128, "restart": "always"},
-            {"name": "portainer", "image": "docker.io/portainer/portainer-ce:2.21", "runtime": "podman", "state": "running", "restart": "always", "ports": ["0.0.0.0:9443->9443/tcp"], "started": int(now - 5 * 86400)},
-            {"name": "fluent-bit", "image": "docker.io/fluent/fluent-bit:3.1", "runtime": "podman", "state": "running", "restart": "always", "started": int(now - 2 * 86400)},
+            {"id": "a1b2c3d4e111", "unit": "caddy.service", "name": "caddy", "image": "docker.io/library/caddy:2.8", "runtime": "podman", "owner": "redos", "state": "running", "restart": "always", "health": "healthy", "ports": ["0.0.0.0:80->80/tcp", "0.0.0.0:443->443/tcp"], "started": int(now - 10 * 86400)},
+            {"id": "a1b2c3d4e222", "name": "atrium", "image": "localhost/atrium:1.0.0", "runtime": "podman", "owner": "redos", "state": "running", "restart": "always", "ports": ["0.0.0.0:5000->5000/tcp"], "started": int(now - 43 * 3600)},
+            {"id": "a1b2c3d4e333", "name": "myhomelab-v6-old", "image": "localhost/myhomelab:v6", "runtime": "podman", "owner": "redos", "state": "exited", "exit": 137, "restart": "always", "ports": ["0.0.0.0:5000->5000/tcp"]},
+            {"id": "a1b2c3d4e444", "name": "logatlas", "image": "localhost/logatlas:latest", "runtime": "podman", "state": "running", "restart": "unless-stopped", "health": "healthy", "started": int(now - 3 * 86400)},
+            {"id": "a1b2c3d4e555", "name": "logatlas", "image": "logatlas:old", "runtime": "docker", "state": "exited", "exit": 128, "restart": "always"},
+            {"id": "a1b2c3d4e666", "name": "portainer", "image": "docker.io/portainer/portainer-ce:2.21", "runtime": "podman", "state": "running", "restart": "always", "ports": ["0.0.0.0:9443->9443/tcp"], "started": int(now - 5 * 86400)},
+            {"id": "a1b2c3d4e777", "name": "fluent-bit", "image": "docker.io/fluent/fluent-bit:3.1", "runtime": "podman", "state": "running", "restart": "always", "started": int(now - 2 * 86400)},
         ]
+    if i == 3:  # список образов хоста для вкладки «Образы»
+        GB = 1024 ** 3
+        imgs = [
+            {"runtime": "podman", "owner": "redos", "id": "d1e2f3a4b5c6", "full_id": "d1e2f3a4b5c6" + "0" * 52, "names": ["docker.io/library/caddy:2.8"], "size": 50 * 2**20, "created": int(now - 30 * 86400), "used_by": ["caddy"]},
+            {"runtime": "podman", "owner": "redos", "id": "e2f3a4b5c6d1", "full_id": "e2f3a4b5c6d1" + "0" * 52, "names": ["localhost/atrium:1.0.0"], "size": 310 * 2**20, "created": int(now - 5 * 86400), "used_by": ["atrium"]},
+            {"runtime": "podman", "owner": "redos", "id": "f3a4b5c6d1e2", "full_id": "f3a4b5c6d1e2" + "0" * 52, "names": ["localhost/myhomelab:v5"], "size": int(1.2 * GB), "created": int(now - 90 * 86400), "used_by": []},
+            {"runtime": "podman", "owner": "redos", "id": "a4b5c6d1e2f3", "full_id": "a4b5c6d1e2f3" + "0" * 52, "names": [], "size": 420 * 2**20, "created": int(now - 60 * 86400), "used_by": []},
+            {"runtime": "podman", "owner": "", "id": "b5c6d1e2f3a4", "full_id": "b5c6d1e2f3a4" + "0" * 52, "names": ["docker.io/portainer/portainer-ce:2.21"], "size": 280 * 2**20, "created": int(now - 12 * 86400), "used_by": ["portainer"]},
+            {"runtime": "docker", "owner": "", "id": "c6d1e2f3a4b5", "full_id": "c6d1e2f3a4b5" + "0" * 52, "names": ["logatlas:old"], "size": 640 * 2**20, "created": int(now - 120 * 86400), "used_by": ["logatlas"]},
+        ]
+        db.x("INSERT OR REPLACE INTO host_images(host_id,at,data) VALUES(?,?,?)", (hid, now - 120, json.dumps(imgs)))
     tot = float(mem.split()[0]) * 2**30
     metrics = {"at": now, "cpu": m["cpu"], "load1": m["cpu"] / 100 * 8, "cores": 8, "mem_used": tot * m["mu"], "mem_total": tot, "swap_pct": 12 * i,
                "disk_pct": m["disk"], "disk_total": 494e9, "disk_free": 494e9 * (1 - m["disk"] / 100), "battery": m["bat"], "battery_chrg": i == 1}
     sw = [{"n": a, "v": v, "s": s, "p": p} for a, v, s, p in APPS] if mac else [{"n": "nginx", "v": "1.22.1", "s": "pkg", "p": ""}, {"n": "zabbix-server-mysql", "v": "6.4.21", "s": "pkg", "p": ""}]
     seen = now - (5 if i != 3 else 3600 * 5)
     db.x("INSERT OR REPLACE INTO hosts(id,name,os,agent_version,key_hash,created,last_seen,posture,posture_at,software,software_at,metrics,metrics_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-         (hid, name, posture["info"]["os"], "0.2.0", "x", now - 86400 * 9, seen, json.dumps(posture), seen, json.dumps(sw), seen, json.dumps(metrics), seen))
+         (hid, name, posture["info"]["os"], "0.8.0" if i == 3 else "0.2.0", "x", now - 86400 * 9, seen, json.dumps(posture), seen, json.dumps(sw), seen, json.dumps(metrics), seen))
     # история метрик для мини-графиков: 6 часов с шагом в минуту
     import math
     db.x("DELETE FROM metric_points WHERE host_id=?", (hid,))

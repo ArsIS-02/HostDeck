@@ -548,7 +548,9 @@ def clean_containers(raw):
             continue
         ports = [str(p)[:80] for p in c.get("ports", [])[:20]] if isinstance(c.get("ports"), list) else []
         out.append({
-            "name": c["name"][:120], "image": str(c.get("image", ""))[:200], "runtime": str(c.get("runtime", ""))[:10],
+            "name": c["name"][:120], "id": str(c.get("id", ""))[:64], "image": str(c.get("image", ""))[:200],
+            "image_id": str(c.get("image_id", ""))[:64], "unit": str(c.get("unit", ""))[:120], "compose": str(c.get("compose", ""))[:120],
+            "runtime": str(c.get("runtime", ""))[:10],
             "owner": str(c.get("owner", ""))[:40], "state": str(c.get("state", ""))[:20],
             "exit": c["exit"] if isinstance(c.get("exit"), int) else 0, "restart": str(c.get("restart", ""))[:20],
             "restarts": c["restarts"] if isinstance(c.get("restarts"), int) else 0, "health": str(c.get("health", ""))[:20],
@@ -882,6 +884,163 @@ async def host_metric_history(request: Request):
     return JSONResponse({"span": span, "now": now, "points": metric_points(hid, now - span, now, limit=180)})
 
 
+OPS = {}                        # op_id -> {host, actor, action, target, created, result}
+OP_TTL = 600.0
+OP_TIMEOUT = 150.0              # агент не ответил за это время: операция считается потерянной
+HEX_ID = re.compile(r"^[0-9a-f]{12,64}$")
+USER_RE = re.compile(r"^[a-z_][a-z0-9_.-]{0,31}$")
+CTR_ACTIONS = ("start", "stop", "restart", "rm")
+CTR_MIN_AGENT = (0, 8, 0)
+RESULT_CODES = {"ok", "already", "disabled", "bad_request", "not_found", "managed", "running", "in_use", "failed", "crashed", "partial", "unsupported", "timeout"}
+
+
+def clean_images(raw):
+    out = []
+    for i in raw[:400]:
+        if not isinstance(i, dict) or not isinstance(i.get("id"), str) or not HEX_ID.match(str(i.get("full_id", i["id"]))[:64]):
+            continue
+        out.append({"runtime": str(i.get("runtime", ""))[:10], "owner": str(i.get("owner", ""))[:40], "id": i["id"][:12], "full_id": str(i.get("full_id", ""))[:64],
+                    "names": [str(n)[:200] for n in (i.get("names") or [])[:20]], "size": i["size"] if isinstance(i.get("size"), int) else 0,
+                    "created": i["created"] if isinstance(i.get("created"), int) else 0,
+                    "used_by": [str(n)[:120] for n in (i.get("used_by") or [])[:20]]})
+    return out
+
+
+def audit_op(op, code, detail=""):
+    names = {"start": "ctr-start", "stop": "ctr-stop", "restart": "ctr-restart", "rm": "ctr-rm", "img_rm": "img-rm"}
+    db.audit(op["actor"], names.get(op["action"], "ctr-op"), host=op["host"], detail=f"{op['target']}: {code}" + (f" ({detail})" if detail else ""))
+
+
+def finish_op(host_id, d):
+    op = OPS.get(str(d.get("op", "")))
+    if not op or op["host"] != host_id or op.get("result"):   # чужой или повторный ответ игнорируется
+        return
+    code = d.get("code") if d.get("code") in RESULT_CODES else "failed"
+    items = []
+    for it in (d.get("items") or [])[:50]:
+        if isinstance(it, dict):
+            items.append({"target": str(it.get("target", ""))[:200], "ok": bool(it.get("ok")),
+                          "code": it.get("code") if it.get("code") in RESULT_CODES else "failed", "detail": str(it.get("detail", ""))[:300]})
+    op["result"] = {"ok": bool(d.get("ok")), "code": code, "detail": str(d.get("detail", ""))[:300], "state": str(d.get("state", ""))[:20],
+                    "items": items, "freed": d["freed"] if isinstance(d.get("freed"), int) else 0}
+    audit_op(op, code, op["result"]["detail"])
+
+
+def expire_ops(now):
+    for oid, op in list(OPS.items()):
+        if not op.get("result") and now - op["created"] > OP_TIMEOUT:
+            op["result"] = {"ok": False, "code": "timeout", "detail": "", "state": "", "items": [], "freed": 0}
+            audit_op(op, "timeout")
+        if now - op["created"] > OP_TTL:
+            OPS.pop(oid, None)
+
+
+def pending_op(host_id):
+    return next((o for o in OPS.values() if o["host"] == host_id and not o.get("result")), None)
+
+
+async def host_ctr_op(request: Request):
+    """Действие над контейнером или образами: только admin, только если управление включено на хосте."""
+    u, e = need(request, "admin")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    row = db.q1("SELECT posture, agent_version, last_seen FROM hosts WHERE id=?", (hid,))
+    if not row:
+        return err("хост не найден", 404)
+    if not row["last_seen"] or time.time() - row["last_seen"] > ONLINE_WINDOW:
+        return err("хост не в сети: команда не дойдёт до агента", 409)
+    try:
+        body = await request.json()
+    except ValueError:
+        return err("некорректный запрос")
+    if not isinstance(body, dict):
+        return err("некорректный запрос")
+    posture = json.loads(row["posture"]) if row["posture"] else {}
+    v = vtuple(row["agent_version"])
+    if not v or v < CTR_MIN_AGENT:
+        return err("агент старше 0.8.0: обновите его", 409)
+    if (posture.get("info") or {}).get("containers_mgmt") != "on":
+        return err("управление контейнерами выключено на хосте: hostdeck-agent set -containers on", 409)
+    action, runtime, owner = str(body.get("action", "")), str(body.get("runtime", "")), str(body.get("owner", ""))
+    if owner == "root":
+        owner = ""
+    if runtime not in ("podman", "docker") or (owner and (runtime != "podman" or not USER_RE.match(owner))):
+        return err("неверная среда")
+    args = {"action": action, "runtime": runtime, "owner": owner}
+    target = ""
+    if action in CTR_ACTIONS:
+        cid, name = str(body.get("id", "")), str(body.get("name", ""))
+        if not HEX_ID.match(cid):
+            return err("неверный идентификатор контейнера")
+        known = [c for c in (posture.get("containers") or []) if isinstance(c, dict) and str(c.get("id", "")) == cid[:12]
+                 and c.get("runtime") == runtime and (c.get("owner") or "") == owner]
+        if not known:
+            return err("контейнера нет в последнем отчёте хоста: обновите список", 404)
+        args.update({"id": cid, "name": known[0].get("name", name)})
+        if action == "rm" and body.get("stop_first"):
+            args["stop_first"] = True
+        target = known[0].get("name", name)
+    elif action == "img_rm":
+        ids = body.get("images")
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 50 or not all(isinstance(i, str) and HEX_ID.match(i) for i in ids):
+            return err("нужно от 1 до 50 образов")
+        row_i = db.q1("SELECT data FROM host_images WHERE host_id=?", (hid,))
+        have = {(i["runtime"], i["owner"], i["id"]) for i in (json.loads(row_i["data"]) if row_i else [])}
+        if any((runtime, owner, i[:12]) not in have for i in ids):
+            return err("образа нет в последнем списке хоста: обновите список", 404)
+        args["images"] = ids
+        target = f"{len(ids)} образ(ов)" if len(ids) > 1 else ids[0][:12]
+    else:
+        return err("неизвестное действие")
+    now = time.time()
+    expire_ops(now)
+    if pending_op(hid):
+        return err("на этом хосте уже выполняется другая операция", 409)
+    oid = secrets.token_hex(6)
+    OPS[oid] = {"host": hid, "actor": u["name"], "action": action, "target": target, "created": now, "result": None}
+    await queue_for(hid).put({"id": secrets.token_hex(4), "type": "ctr", "op": oid, "args": args})
+    return JSONResponse({"op": oid})
+
+
+async def host_ctr_op_status(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    expire_ops(time.time())
+    op = OPS.get(request.path_params["op"])
+    if not op or op["host"] != request.path_params["id"]:
+        return err("операция не найдена", 404)
+    return JSONResponse({"done": bool(op.get("result")), "result": op.get("result"), "action": op["action"], "target": op["target"]})
+
+
+async def host_images(request: Request):
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    row = db.q1("SELECT at, data FROM host_images WHERE host_id=?", (hid,))
+    return JSONResponse({"at": row["at"] if row else None, "items": json.loads(row["data"]) if row else []})
+
+
+async def host_images_refresh(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    row = db.q1("SELECT posture, agent_version FROM hosts WHERE id=?", (hid,))
+    if not row:
+        return err("хост не найден", 404)
+    posture = json.loads(row["posture"]) if row["posture"] else {}
+    v = vtuple(row["agent_version"])
+    if not v or v < CTR_MIN_AGENT or (posture.get("info") or {}).get("containers_mgmt") != "on":
+        return JSONResponse({"queued": False})
+    await queue_for(hid).put({"id": secrets.token_hex(4), "type": "images"})
+    return JSONResponse({"queued": True})
+
+
 async def host_refresh(request: Request):
     u, e = need(request, "operator")
     if e:
@@ -1037,6 +1196,7 @@ async def delete_hosts(user, ids):
         db.x("DELETE FROM history WHERE host_id=?", (hid,))
         db.x("DELETE FROM idx_points WHERE host_id=?", (hid,))
         db.x("DELETE FROM metric_points WHERE host_id=?", (hid,))
+        db.x("DELETE FROM host_images WHERE host_id=?", (hid,))
         queues.pop(hid, None)
         n += 1
     return n
@@ -1214,6 +1374,19 @@ async def agent_report(request: Request):
         db.x("UPDATE hosts SET software=?, software_at=?, last_seen=? WHERE id=?",
              (json.dumps(clean, ensure_ascii=False), now, now, host["id"]))
         return JSONResponse({"ok": True, "count": len(clean)})
+    if kind == "images":
+        d = data.get("data")
+        if not isinstance(d, list) or len(json.dumps(d)) > 400_000:
+            return err("некорректные данные")
+        clean = clean_images(d)
+        db.x("INSERT OR REPLACE INTO host_images(host_id,at,data) VALUES(?,?,?)", (host["id"], now, json.dumps(clean, ensure_ascii=False)))
+        return JSONResponse({"ok": True, "count": len(clean)})
+    if kind == "op_result":
+        d = data.get("data")
+        if not isinstance(d, dict) or len(json.dumps(d)) > 20_000:
+            return err("некорректные данные")
+        finish_op(host["id"], d)
+        return JSONResponse({"ok": True})
     if kind == "event":
         ev = str(data.get("event", ""))
         if ev in ("update-failed", "update-current"):
@@ -1363,6 +1536,10 @@ app = Starlette(
         Route("/api/hosts/{id}", host_detail),
         Route("/api/hosts/{id}/refresh", host_refresh, methods=["POST"]),
         Route("/api/hosts/{id}/live", host_live, methods=["POST"]),
+        Route("/api/hosts/{id}/ctr/op", host_ctr_op, methods=["POST"]),
+        Route("/api/hosts/{id}/ctr/op/{op}", host_ctr_op_status),
+        Route("/api/hosts/{id}/images", host_images),
+        Route("/api/hosts/{id}/images/refresh", host_images_refresh, methods=["POST"]),
         Route("/api/hosts/{id}/metrics/history", host_metric_history),
         Route("/api/hosts/{id}/history", host_history),
         Route("/api/hosts/{id}/profile", host_profile_set, methods=["POST"]),

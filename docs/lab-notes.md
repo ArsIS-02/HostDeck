@@ -71,6 +71,8 @@ sleep 4; systemctl --user is-active hostdeck; curl -s http://127.0.0.1:8080/api/
 
 **Обновление из веб-интерфейса.** Один раз, вручную, обновите агента готовой командой из окна «Добавить хост»: блок «Обновить уже установленного агента» уже содержит `HOSTDECK_AUTOUPDATE=1`, без токена и имени. Выключить обратно: `HOSTDECK_AUTOUPDATE=0` или `sudo hostdeck-agent set -autoupdate off`. После этого порядок такой: обновили сервер (`podman build` и `restart`), в интерфейсе у хостов появилась метка «Доступна версия», нажали «Обновить агента». Откат на хосте вручную: `sudo mv /usr/local/bin/hostdeck-agent.prev /usr/local/bin/hostdeck-agent && sudo systemctl restart hostdeck-agent` (на macOS: `launchctl kickstart -k system/local.hostdeck.agent`).
 
+**Управление контейнерами.** Выключено по умолчанию. Включить при установке: `HOSTDECK_CONTAINERS=1` (галочка в окне «Добавить хост»); на уже установленном агенте: `sudo hostdeck-agent set -containers on && sudo systemctl restart hostdeck-agent`, выключить: `set -containers off`. После включения на вкладке «Контейнеры» появляются кнопки (только у admin) и подвкладка «Образы». Контейнер самого HostDeck, запущенный через Quadlet, из интерфейса лучше не останавливать: вернуть его можно только на хосте, `systemctl --user restart hostdeck` под пользователем, от которого он работает.
+
 Без внутреннего CA обновление можно сделать короткой командой:
 
 ```bash

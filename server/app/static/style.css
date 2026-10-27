@@ -305,3 +305,12 @@ figure:has(.l-fail) .sp-line { stroke: var(--g-fail); } figure:has(.l-fail) .sp-
 @media (prefers-reduced-motion: reduce) { .l-fail .g-val, .l-fail .g-text, .l-warn .g-val, .live-dot { animation: none; } .g-needle, .g-val { transition: none; } }
 
 .brand-name { display: flex; flex-direction: column; line-height: 1.1; } .brand-ver { font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+/* управление контейнерами и образами */
+.ctr-subs { margin: 0 0 14px; }
+.ctr-act-h, td.ctr-act { text-align: right; white-space: nowrap; } td.ctr-act .btn { min-height: 32px; width: 32px; margin-left: 2px; }
+.ctr-busy { display: inline-block; max-width: 160px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; animation: ctrpulse 1.2s ease-in-out infinite; }
+tr.ctr-working { opacity: .75; } @keyframes ctrpulse { 50% { opacity: .4; } }
+.ctr-hint { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; margin: 0 0 14px; } .ctr-hint .ico { flex: none; margin-top: 2px; color: var(--warn); }
+.ctr-hint p { margin: 4px 0 10px; } .ctr-hint .code { margin: 0; }
+.cb-col { width: 40px; } .tbl .num, .tbl th.num { text-align: right; white-space: nowrap; }
+.img-name { margin-bottom: 2px; } .img-list { margin: 10px 0 0; padding-left: 18px; max-height: 240px; overflow: auto; } .img-list li { margin: 3px 0; }

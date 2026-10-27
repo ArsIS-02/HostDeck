@@ -94,13 +94,15 @@ type httpError struct {
 func (e *httpError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.code, e.body) }
 
 type Command struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	SID  string `json:"sid,omitempty"`
-	Data string `json:"data,omitempty"`
-	Cols int    `json:"cols,omitempty"`
-	Rows int    `json:"rows,omitempty"`
-	Sec  int    `json:"sec,omitempty"`
+	ID   string  `json:"id"`
+	Type string  `json:"type"`
+	SID  string  `json:"sid,omitempty"`
+	Data string  `json:"data,omitempty"`
+	Cols int     `json:"cols,omitempty"`
+	Rows int     `json:"rows,omitempty"`
+	Sec  int     `json:"sec,omitempty"`
+	Args *OpArgs `json:"args,omitempty"`
+	Op   string  `json:"op,omitempty"`
 }
 
 func (c *Client) poll(ctx context.Context) ([]Command, error) {
@@ -129,6 +131,21 @@ func (c *Client) reportLiveMetrics(ctx context.Context, m Metrics) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	return c.post(ctx, "/agent/report", map[string]any{"kind": "metrics", "data": m}, nil)
+}
+
+func (c *Client) reportOp(ctx context.Context, r OpResult) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return c.post(ctx, "/agent/report", map[string]any{"kind": "op_result", "data": r}, nil)
+}
+
+func (c *Client) reportImages(ctx context.Context, imgs []ImgInfo) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if imgs == nil {
+		imgs = []ImgInfo{}
+	}
+	return c.post(ctx, "/agent/report", map[string]any{"kind": "images", "data": imgs}, nil)
 }
 
 func (c *Client) reportSoftware(ctx context.Context, items []SoftwareItem) error {

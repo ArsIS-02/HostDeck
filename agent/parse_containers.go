@@ -21,6 +21,9 @@ type ctr struct {
 	Health  string // healthy, unhealthy, starting или пусто
 	Runtime string // podman или docker
 	Image   string
+	ImageID string // полный ID образа без префикса sha256:
+	Unit    string // юнит systemd, который запускает контейнер (метка PODMAN_SYSTEMD_UNIT: Quadlet, generate systemd)
+	Compose string // проект docker compose
 	Binds   []portBind
 }
 
@@ -42,8 +45,12 @@ func (b portBind) anyIP() bool { return b.IP == "" || b.IP == "0.0.0.0" || b.IP 
 // CtrInfo: строка списка контейнеров в отчёте агента. Переменные окружения, команды запуска и тома не собираются:
 // в них бывают пароли и токены.
 type CtrInfo struct {
+	ID       string   `json:"id,omitempty"`
 	Name     string   `json:"name"`
 	Image    string   `json:"image,omitempty"`
+	ImageID  string   `json:"image_id,omitempty"`
+	Unit     string   `json:"unit,omitempty"`
+	Compose  string   `json:"compose,omitempty"`
 	Runtime  string   `json:"runtime"`
 	Owner    string   `json:"owner,omitempty"`
 	State    string   `json:"state"`
@@ -58,7 +65,7 @@ type CtrInfo struct {
 func ctrInfos(cs []ctr) []CtrInfo {
 	out := make([]CtrInfo, 0, len(cs))
 	for _, c := range cs {
-		it := CtrInfo{Name: c.Name, Image: c.Image, Runtime: c.Runtime, State: c.Status, Exit: c.Exit, Restart: c.Policy,
+		it := CtrInfo{ID: shortID(c.ID), ImageID: shortID(c.ImageID), Unit: c.Unit, Compose: c.Compose, Name: c.Name, Image: c.Image, Runtime: c.Runtime, State: c.Status, Exit: c.Exit, Restart: c.Policy,
 			Restarts: c.Restart, Health: c.Health}
 		if c.Owner != "" && c.Owner != "root" {
 			it.Owner = c.Owner
@@ -105,9 +112,11 @@ type inspectDoc struct {
 		} `json:"PortBindings"`
 	} `json:"HostConfig"`
 	Config struct {
-		Image string `json:"Image"`
+		Image  string            `json:"Image"`
+		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	ImageName string `json:"ImageName"`
+	ImageID   string `json:"Image"`
 }
 
 // parseInspect разбирает вывод `inspect` (JSON-массив). Лишние поля игнорируются, чужие версии формата не ломают разбор.
@@ -130,6 +139,9 @@ func parseInspect(js, owner string) ([]ctr, error) {
 		if d.State.Health != nil {
 			c.Health = strings.ToLower(d.State.Health.Status)
 		}
+		c.ImageID = normID(d.ImageID)
+		c.Unit = d.Config.Labels["PODMAN_SYSTEMD_UNIT"]
+		c.Compose = d.Config.Labels["com.docker.compose.project"]
 		c.Image = d.ImageName
 		if c.Image == "" {
 			c.Image = d.Config.Image
@@ -357,4 +369,17 @@ func takeContainers() []CtrInfo {
 	c := lastContainers
 	lastContainers = nil
 	return c
+}
+
+// normID приводит идентификатор к виду «64 hex без префикса»: docker пишет sha256:..., podman без префикса.
+func normID(s string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(s), "sha256:"))
+}
+
+func shortID(s string) string {
+	s = normID(s)
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }

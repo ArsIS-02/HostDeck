@@ -72,17 +72,19 @@ func linuxContainers(add func(Check)) {
 	}
 }
 
-// rootlessContainers собирает контейнеры обычных пользователей, у которых есть сеанс systemd (/run/user/UID), и их сбойные
-// пользовательские службы. Команды выполняются от имени пользователя через runuser: корень не видит чужое хранилище rootless Podman.
-func rootlessContainers(podman string, collect func(owner, runtime string, argv ...string)) (failed []string) {
-	ru := find("runuser")
-	if ru == "" {
-		return nil
-	}
+// rootlessUser: пользователь, у которого есть сеанс systemd и, значит, может быть rootless Podman.
+type rootlessUser struct {
+	Name string
+	RT   string // /run/user/UID
+}
+
+// rootlessUsers перечисляет таких пользователей (UID 1000–59999, не nologin, есть /run/user/UID).
+func rootlessUsers() []rootlessUser {
 	pw, ok := readFile("/etc/passwd")
 	if !ok {
 		return nil
 	}
+	var out []rootlessUser
 	for _, line := range strings.Split(pw, "\n") {
 		f := strings.Split(line, ":")
 		if len(f) < 7 {
@@ -96,13 +98,30 @@ func rootlessContainers(podman string, collect func(owner, runtime string, argv 
 		if _, err := os.Stat(rt); err != nil {
 			continue // у пользователя нет запущенного сеанса: его контейнеры сейчас не работают
 		}
-		env := []string{"env", "XDG_RUNTIME_DIR=" + rt, "DBUS_SESSION_BUS_ADDRESS=unix:path=" + rt + "/bus"}
-		collect(f[0], "podman", append(append([]string{ru, "-u", f[0], "--"}, env...), podman)...)
+		out = append(out, rootlessUser{f[0], rt})
+	}
+	return out
+}
+
+func userEnv(u rootlessUser) []string {
+	return []string{"env", "XDG_RUNTIME_DIR=" + u.RT, "DBUS_SESSION_BUS_ADDRESS=unix:path=" + u.RT + "/bus"}
+}
+
+// rootlessContainers собирает контейнеры обычных пользователей и их сбойные пользовательские службы. Команды выполняются
+// от имени пользователя через runuser: корень не видит чужое хранилище rootless Podman.
+func rootlessContainers(podman string, collect func(owner, runtime string, argv ...string)) (failed []string) {
+	ru := find("runuser")
+	if ru == "" {
+		return nil
+	}
+	for _, u := range rootlessUsers() {
+		env := userEnv(u)
+		collect(u.Name, "podman", append(append([]string{ru, "-u", u.Name, "--"}, env...), podman)...)
 		if sc := find("systemctl"); sc != "" {
-			out, code := runCode(10*time.Second, ru, append(append([]string{"-u", f[0], "--"}, env...), sc, "--user", "--failed", "--plain", "--no-legend")...)
+			out, code := runCode(10*time.Second, ru, append(append([]string{"-u", u.Name, "--"}, env...), sc, "--user", "--failed", "--plain", "--no-legend")...)
 			if code == 0 {
-				for _, u := range parseFailedUnits(out) {
-					failed = append(failed, u+"@"+f[0])
+				for _, un := range parseFailedUnits(out) {
+					failed = append(failed, un+"@"+u.Name)
 				}
 			}
 		}
