@@ -13,12 +13,13 @@ import (
 // Проверка контейнеров Podman и Docker: от имени root и от имени обычных пользователей (rootless Podman).
 // Если ни Podman, ни Docker на хосте нет, проверка не добавляется.
 func linuxContainers(add func(Check)) {
+	lastContainers = nil
 	podman, docker := find("podman"), find("docker")
 	if podman == "" && docker == "" {
 		return
 	}
 	var all []ctr
-	collect := func(owner string, argv ...string) {
+	collect := func(owner, runtime string, argv ...string) {
 		out, code := runCode(20*time.Second, argv[0], append(append([]string{}, argv[1:]...), "ps", "-aq")...)
 		if code != 0 {
 			return
@@ -32,20 +33,24 @@ func linuxContainers(add func(Check)) {
 			return
 		}
 		if cs, err := parseInspect(js, owner); err == nil {
+			for i := range cs {
+				cs[i].Runtime = runtime
+			}
 			all = append(all, cs...)
 		}
 	}
 	if podman != "" {
-		collect("root", podman)
+		collect("root", "podman", podman)
 	}
 	if docker != "" {
-		collect("root", docker)
+		collect("root", "docker", docker)
 	}
 	var units []string
 	if podman != "" {
 		units = rootlessContainers(podman, collect)
 	}
 	all = dedupCtr(all)
+	lastContainers = ctrInfos(all)
 	if len(all) == 0 && len(units) == 0 {
 		// runtime есть, контейнеров нет: это не повод для замечаний
 		return
@@ -62,11 +67,14 @@ func linuxContainers(add func(Check)) {
 	}
 	st, v, n, d := judgeContainers(all, units, restartSvc, time.Now())
 	add(Check{ID: "containers", Status: st, Value: v, Num: n, Detail: d})
+	if cst, cv, cn, cd := judgeConflicts(all); cst != "" {
+		add(Check{ID: "container_conflicts", Status: cst, Value: cv, Num: cn, Detail: cd})
+	}
 }
 
 // rootlessContainers собирает контейнеры обычных пользователей, у которых есть сеанс systemd (/run/user/UID), и их сбойные
 // пользовательские службы. Команды выполняются от имени пользователя через runuser: корень не видит чужое хранилище rootless Podman.
-func rootlessContainers(podman string, collect func(owner string, argv ...string)) (failed []string) {
+func rootlessContainers(podman string, collect func(owner, runtime string, argv ...string)) (failed []string) {
 	ru := find("runuser")
 	if ru == "" {
 		return nil
@@ -89,7 +97,7 @@ func rootlessContainers(podman string, collect func(owner string, argv ...string
 			continue // у пользователя нет запущенного сеанса: его контейнеры сейчас не работают
 		}
 		env := []string{"env", "XDG_RUNTIME_DIR=" + rt, "DBUS_SESSION_BUS_ADDRESS=unix:path=" + rt + "/bus"}
-		collect(f[0], append(append([]string{ru, "-u", f[0], "--"}, env...), podman)...)
+		collect(f[0], "podman", append(append([]string{ru, "-u", f[0], "--"}, env...), podman)...)
 		if sc := find("systemctl"); sc != "" {
 			out, code := runCode(10*time.Second, ru, append(append([]string{"-u", f[0], "--"}, env...), sc, "--user", "--failed", "--plain", "--no-legend")...)
 			if code == 0 {

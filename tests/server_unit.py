@@ -55,5 +55,11 @@ ok(m.vkey("2.0") == m.vkey("2.0") and not (m.vkey("2.0") < m.vkey("2.0")), "ра
 ok(sorted(["1.10", "1.2", "1.9"], key=m.vkey) == ["1.2", "1.9", "1.10"], "сортировка версий по возрастанию")
 ok(m.vkey("") == [], "пустая версия даёт пустой ключ")
 
+# список контейнеров из отчёта агента: только известные поля, ограниченной длины
+ok(m.clean_containers(None) is None and m.clean_containers("x") is None, "контейнеры: нет списка -> None")
+cc = m.clean_containers([{"name": "web", "image": "i" * 500, "runtime": "docker", "state": "running", "exit": "boom", "ports": ["0.0.0.0:80->80/tcp"], "env": ["SECRET=1"]}, {"x": 1}, "str"])
+ok(len(cc) == 1 and len(cc[0]["image"]) == 200 and cc[0]["exit"] == 0 and "env" not in cc[0] and cc[0]["ports"] == ["0.0.0.0:80->80/tcp"], "контейнеры: лишние поля и мусор отброшены")
+ok(len(m.clean_containers([{"name": str(i)} for i in range(400)])) == 150, "контейнеры: не больше 150")
+
 print("\nИТОГО: %d/%d" % (sum(res), len(res)))
 sys.exit(0 if all(res) else 1)

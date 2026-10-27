@@ -469,6 +469,24 @@ def vtuple(v):
         return None
 
 
+def clean_containers(raw):
+    """Список контейнеров из отчёта агента: только известные поля, ограниченной длины. None — агент их не присылал."""
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for c in raw[:150]:
+        if not isinstance(c, dict) or not isinstance(c.get("name"), str):
+            continue
+        ports = [str(p)[:80] for p in c.get("ports", [])[:20]] if isinstance(c.get("ports"), list) else []
+        out.append({
+            "name": c["name"][:120], "image": str(c.get("image", ""))[:200], "runtime": str(c.get("runtime", ""))[:10],
+            "owner": str(c.get("owner", ""))[:40], "state": str(c.get("state", ""))[:20],
+            "exit": c["exit"] if isinstance(c.get("exit"), int) else 0, "restart": str(c.get("restart", ""))[:20],
+            "restarts": c["restarts"] if isinstance(c.get("restarts"), int) else 0, "health": str(c.get("health", ""))[:20],
+            "ports": ports, "started": c["started"] if isinstance(c.get("started"), int) else 0})
+    return out
+
+
 def summarize(row, detail=False):
     now = time.time()
     online = bool(row["last_seen"]) and now - row["last_seen"] < ONLINE_WINDOW
@@ -499,7 +517,11 @@ def summarize(row, detail=False):
         "metrics_at": row["metrics_at"],
         "software_at": row["software_at"],
         "software_count": row["software_count"],
+        "containers_count": None,
     }
+    ctrs = clean_containers((posture or {}).get("containers"))
+    if ctrs is not None:
+        out["containers_count"] = len(ctrs)
     latest = agent_latest()
     cur, lat = vtuple(row["agent_version"]), vtuple(latest) if latest else None
     out["agent_latest"] = latest
@@ -511,6 +533,7 @@ def summarize(row, detail=False):
             if t and t[0] == c.get("raw_status"):
                 c["since"] = t[1]
         out["checks"] = checks
+        out["containers"] = ctrs
     return out
 
 

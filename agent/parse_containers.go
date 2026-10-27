@@ -19,6 +19,68 @@ type ctr struct {
 	Restart int
 	Started time.Time
 	Health  string // healthy, unhealthy, starting или пусто
+	Runtime string // podman или docker
+	Image   string
+	Binds   []portBind
+}
+
+// portBind: опубликованный на хосте порт контейнера.
+type portBind struct {
+	IP, Host, Cont, Proto string
+}
+
+func (b portBind) String() string {
+	ip := b.IP
+	if ip == "" {
+		ip = "0.0.0.0"
+	}
+	return fmt.Sprintf("%s:%s->%s/%s", ip, b.Host, b.Cont, b.Proto)
+}
+
+func (b portBind) anyIP() bool { return b.IP == "" || b.IP == "0.0.0.0" || b.IP == "::" }
+
+// CtrInfo: строка списка контейнеров в отчёте агента. Переменные окружения, команды запуска и тома не собираются:
+// в них бывают пароли и токены.
+type CtrInfo struct {
+	Name     string   `json:"name"`
+	Image    string   `json:"image,omitempty"`
+	Runtime  string   `json:"runtime"`
+	Owner    string   `json:"owner,omitempty"`
+	State    string   `json:"state"`
+	Exit     int      `json:"exit,omitempty"`
+	Restart  string   `json:"restart,omitempty"`
+	Restarts int      `json:"restarts,omitempty"`
+	Health   string   `json:"health,omitempty"`
+	Ports    []string `json:"ports,omitempty"`
+	Started  int64    `json:"started,omitempty"`
+}
+
+func ctrInfos(cs []ctr) []CtrInfo {
+	out := make([]CtrInfo, 0, len(cs))
+	for _, c := range cs {
+		it := CtrInfo{Name: c.Name, Image: c.Image, Runtime: c.Runtime, State: c.Status, Exit: c.Exit, Restart: c.Policy,
+			Restarts: c.Restart, Health: c.Health}
+		if c.Owner != "" && c.Owner != "root" {
+			it.Owner = c.Owner
+		}
+		if !c.Started.IsZero() && c.Status == "running" {
+			it.Started = c.Started.Unix()
+		}
+		for _, b := range c.Binds {
+			it.Ports = append(it.Ports, b.String())
+		}
+		out = append(out, it)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Owner < out[j].Owner
+	})
+	if len(out) > 150 {
+		out = out[:150]
+	}
+	return out
 }
 
 type inspectDoc struct {
@@ -37,7 +99,15 @@ type inspectDoc struct {
 		RestartPolicy struct {
 			Name string `json:"Name"`
 		} `json:"RestartPolicy"`
+		PortBindings map[string][]struct {
+			HostIP   string `json:"HostIp"`
+			HostPort string `json:"HostPort"`
+		} `json:"PortBindings"`
 	} `json:"HostConfig"`
+	Config struct {
+		Image string `json:"Image"`
+	} `json:"Config"`
+	ImageName string `json:"ImageName"`
 }
 
 // parseInspect разбирает вывод `inspect` (JSON-массив). Лишние поля игнорируются, чужие версии формата не ломают разбор.
@@ -59,6 +129,29 @@ func parseInspect(js, owner string) ([]ctr, error) {
 		}
 		if d.State.Health != nil {
 			c.Health = strings.ToLower(d.State.Health.Status)
+		}
+		c.Image = d.ImageName
+		if c.Image == "" {
+			c.Image = d.Config.Image
+		}
+		if len(c.Image) > 200 {
+			c.Image = c.Image[:200]
+		}
+		keys := make([]string, 0, len(d.HostConfig.PortBindings))
+		for k := range d.HostConfig.PortBindings {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			cp, proto := k, "tcp"
+			if i := strings.IndexByte(k, '/'); i >= 0 {
+				cp, proto = k[:i], k[i+1:]
+			}
+			for _, b := range d.HostConfig.PortBindings[k] {
+				if b.HostPort != "" && b.HostPort != "0" {
+					c.Binds = append(c.Binds, portBind{IP: b.HostIP, Host: b.HostPort, Cont: cp, Proto: proto})
+				}
+			}
 		}
 		out = append(out, c)
 	}
@@ -109,10 +202,7 @@ func judgeContainers(cs []ctr, units []string, restartSvc string, now time.Time)
 	running := 0
 	needRestartSvc := false
 	for _, c := range cs {
-		label := c.Name
-		if c.Owner != "" && c.Owner != "root" {
-			label += "@" + c.Owner
-		}
+		label := ctrLabel(c)
 		switch {
 		case c.Status == "running":
 			running++
@@ -156,4 +246,115 @@ func ctrList(names []string, n int) string {
 		return strings.Join(names[:n], ", ") + " …"
 	}
 	return strings.Join(names, ", ")
+}
+
+func sameEnv(a, b ctr) bool { return a.Runtime == b.Runtime && a.Owner == b.Owner }
+
+func envLabel(c ctr) string {
+	l := c.Runtime
+	if c.Owner != "" && c.Owner != "root" {
+		l += "@" + c.Owner
+	}
+	return l
+}
+
+func ctrLabel(c ctr) string {
+	l := c.Name
+	if c.Owner != "" && c.Owner != "root" {
+		l += "@" + c.Owner
+	}
+	if c.Runtime == "docker" {
+		l += "@docker"
+	}
+	return l
+}
+
+// judgeConflicts ищет контейнеры, которые мешают друг другу:
+//   - одно имя в разных средах (Podman root, Podman пользователя, Docker): обычно остаток старого запуска;
+//   - один порт хоста у нескольких контейнеров, из которых хотя бы один остановлен, но должен подниматься сам
+//     (restart=always|unless-stopped): после перезагрузки они займутся гонкой за порт.
+func judgeConflicts(cs []ctr) (status, value string, num float64, detail string) {
+	var parts []string
+	byName := map[string][]ctr{}
+	var names []string
+	for _, c := range cs {
+		if _, ok := byName[c.Name]; !ok {
+			names = append(names, c.Name)
+		}
+		byName[c.Name] = append(byName[c.Name], c)
+	}
+	sort.Strings(names)
+	n := 0
+	for _, nm := range names {
+		g := byName[nm]
+		envs := map[string]bool{}
+		var ls []string
+		for _, c := range g {
+			if !envs[envLabel(c)] {
+				ls = append(ls, envLabel(c))
+			}
+			envs[envLabel(c)] = true
+		}
+		if len(envs) > 1 {
+			parts = append(parts, "name "+nm+" ("+strings.Join(ls, "+")+")")
+			n++
+		}
+	}
+	type pk struct{ proto, port string }
+	byPort := map[pk][]ctr{}
+	var keys []pk
+	for _, c := range cs {
+		seen := map[pk]bool{}
+		for _, b := range c.Binds {
+			k := pk{b.Proto, b.Host}
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			if _, ok := byPort[k]; !ok {
+				keys = append(keys, k)
+			}
+			byPort[k] = append(byPort[k], c)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].proto != keys[j].proto {
+			return keys[i].proto < keys[j].proto
+		}
+		return keys[i].port < keys[j].port
+	})
+	for _, k := range keys {
+		g := byPort[k]
+		if len(g) < 2 {
+			continue
+		}
+		flag := false
+		for _, c := range g {
+			if wantsRestart(c.Policy) && c.Status != "running" {
+				flag = true
+			}
+		}
+		if !flag {
+			continue
+		}
+		var ls []string
+		for _, c := range g {
+			ls = append(ls, ctrLabel(c))
+		}
+		parts = append(parts, "port "+k.port+"/"+k.proto+" ("+strings.Join(ls, "+")+")")
+		n++
+	}
+	if n == 0 {
+		return "", "", 0, ""
+	}
+	return "warn", "ctr_conflict", float64(n), ctrList(parts, 6)
+}
+
+// lastContainers: список контейнеров последнего сбора; collect() забирает его в отчёт (под collectMu).
+var lastContainers []CtrInfo
+
+func takeContainers() []CtrInfo {
+	c := lastContainers
+	lastContainers = nil
+	return c
 }

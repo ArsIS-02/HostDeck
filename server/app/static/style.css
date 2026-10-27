@@ -135,7 +135,7 @@ button, input { font: inherit; color: inherit; }
 .badge:not(:has(span)) { padding: 3px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--seg); color: var(--muted); font-size: 12.5px; }
-.chip.c-warn { background: var(--warn-bg); color: var(--warn); } .chip.c-ok { background: var(--ok-bg); color: var(--ok); } .chip.c-off { background: var(--unk-bg); color: var(--unk); }
+.chip.c-fail { background: var(--fail-bg); color: var(--fail); } .chip.c-warn { background: var(--warn-bg); color: var(--warn); } .chip.c-ok { background: var(--ok-bg); color: var(--ok); } .chip.c-off { background: var(--unk-bg); color: var(--unk); }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--g-none); } .dot.on { background: var(--g-ok); box-shadow: 0 0 0 3px var(--ok-bg); }
 
 /* индикатор-полоса */
@@ -281,3 +281,10 @@ a.host-chip { text-decoration: none; color: var(--accent, #0a84ff); } a.host-chi
 .tip.pinned { box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow, 0 10px 30px #0003); }
 .tip .cmd-wrap { position: relative; } .tip .cmd-wrap pre { padding-right: 96px; } .tip .cmd-copy { position: absolute; top: 8px; right: 6px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--line2); border-radius: 999px; background: var(--card); color: var(--muted); font-size: 12px; cursor: pointer; } .tip .cmd-copy:hover { color: var(--text); background: var(--seg); }
 .copy-tmp { position: fixed; left: -9999px; top: 0; opacity: 0; }
+
+/* вкладка «Контейнеры» */
+.ctr-sum { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+.ctr-name { display: block; font-weight: 600; }
+.ctr-img { display: block; font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.ctr-ports { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.tbl tr.ctr-bad td:first-child { box-shadow: inset 3px 0 0 var(--warn); } .tbl tr.ctr-bad.ctr-red td:first-child { box-shadow: inset 3px 0 0 var(--fail); }

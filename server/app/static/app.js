@@ -587,6 +587,7 @@
   // --- страница хоста -----------------------------------------------------------------------------------------------------------------
   let hostTab = "state";
   const swState = { q: "", src: "all", items: null, at: null, hostId: null };
+  const ctrState = { q: "", f: "all" };
 
   function gaugesRow(h) {
     const x = metricsOf(h), m = x.m;
@@ -741,13 +742,74 @@
     } catch (e) { fail(e); swState.items = []; }
   }
 
+  // --- вкладка «Контейнеры» ----------------------------------------------------------------------------
+  const ctrWants = (c) => c.restart === "always" || c.restart === "unless-stopped";
+  // уровень замечания по контейнеру: red — перезапускается по кругу, warn — остановлен с ошибкой, нездоров, не стартовал; "" — всё в порядке
+  function ctrLevel(c) {
+    if (c.state === "restarting") return "red";
+    if (c.state === "running") return c.health === "unhealthy" ? "warn" : "";
+    return ctrWants(c) && (c.exit !== 0 || c.state === "created") ? "warn" : "";
+  }
+  function containersTab(h) {
+    const all = h.containers || [];
+    const envOf = (c) => c.runtime + (c.owner ? "@" + c.owner : "");
+    const envsByName = {};
+    for (const c of all) (envsByName[c.name] = envsByName[c.name] || new Set()).add(envOf(c));
+    const body = el("div", {});
+    const count = el("span", { class: "muted small" });
+    const draw = () => {
+      const q = ctrState.q.trim().toLowerCase();
+      let rows = all.filter((c) => (ctrState.f === "all" || (ctrState.f === "running" ? c.state === "running" : ctrState.f === "stopped" ? c.state !== "running" : ctrLevel(c) !== ""))
+        && (!q || [c.name, c.image, c.owner, c.runtime, ...(c.ports || [])].join(" ").toLowerCase().includes(q)));
+      const rank = (c) => (ctrLevel(c) === "red" ? 0 : ctrLevel(c) === "warn" ? 1 : c.state === "running" ? 3 : 2);
+      rows = rows.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+      count.textContent = rows.length === all.length ? "" : `${rows.length} / ${all.length}`;
+      if (!rows.length) { body.replaceChildren(el("div", { class: "empty" }, icon("box", 40), el("h3", {}, T("ctr.nomatch")))); return; }
+      body.replaceChildren(el("div", { class: "card table-card" }, el("table", { class: "tbl" },
+        el("thead", {}, el("tr", {}, el("th", {}, T("ctr.col.name")), el("th", {}, T("ctr.col.env")), el("th", {}, T("ctr.col.state")), el("th", { class: "hide-m" }, T("ctr.col.restart")), el("th", { class: "hide-m" }, T("ctr.col.ports")), el("th", { class: "hide-m" }, T("ctr.col.up")))),
+        el("tbody", {}, rows.map((c) => {
+          const lv = ctrLevel(c);
+          const stTone = c.state === "running" ? (c.health === "unhealthy" ? "c-warn" : "c-ok") : c.state === "restarting" ? "c-fail" : lv === "warn" ? "c-warn" : "c-off";
+          const stText = T("ctr.st." + c.state) !== "ctr.st." + c.state ? T("ctr.st." + c.state) : c.state;
+          return el("tr", { class: lv ? "ctr-bad" + (lv === "red" ? " ctr-red" : "") : "" },
+            el("td", {}, el("span", { class: "ctr-name" }, c.name), c.image ? el("span", { class: "ctr-img" }, c.image) : null,
+              envsByName[c.name].size > 1 ? chip("alert", T("ctr.dup"), "c-warn") : null),
+            el("td", {}, chip(c.runtime === "docker" ? "server" : "box", T("ctr.rt." + c.runtime) + (c.owner ? " · " + c.owner : (c.runtime === "podman" ? " · root" : "")), "")),
+            el("td", {}, chip(null, stText + (c.state !== "running" && c.state !== "created" && c.exit ? ` · ${T("ctr.exit", { n: c.exit })}` : ""), stTone),
+              c.health === "unhealthy" ? el("span", { class: "muted small" }, " " + T("ctr.unhealthy")) : null),
+            el("td", { class: "hide-m muted small" }, c.restart && c.restart !== "no" ? c.restart : "—"),
+            el("td", { class: "hide-m" }, c.ports && c.ports.length ? el("div", { class: "ctr-ports" }, c.ports.map((p) => el("div", {}, p))) : el("span", { class: "muted" }, "—")),
+            el("td", { class: "hide-m muted small" }, c.started ? ago(c.started) : "—"));
+        })))));
+    };
+    const search = el("input", { class: "input", type: "search", placeholder: T("ctr.search"), "aria-label": T("ctr.search"), value: ctrState.q });
+    search.addEventListener("input", () => { ctrState.q = search.value; draw(); });
+    const filters = ["all", "running", "stopped", "problem"].map((f) => ({ value: f, label: T("ctr.f." + f) }));
+    const bad = all.filter((c) => ctrLevel(c) !== "").length, run = all.filter((c) => c.state === "running").length;
+    const wrap = el("div", {});
+    if (!all.length) {
+      wrap.append(el("div", { class: "empty" }, icon("box", 40), el("h3", {}, T("ctr.none")), el("p", { class: "muted" }, T("ctr.none.d"))));
+      return wrap;
+    }
+    wrap.append(
+      el("div", { class: "ctr-sum" }, chip("box", T("ctr.sum", { r: run, n: all.length }), run === all.length ? "c-ok" : ""), bad ? chip("alert", T("ctr.sum.bad", { n: bad }), "c-warn") : null,
+        el("span", { class: "spacer" }), el("span", { class: "muted small" }, h.posture_at ? T("ctr.updated", { t: ago(h.posture_at) }) : "")),
+      el("div", { class: "toolbar" }, el("div", { class: "search-wrap" }, icon("search", 16), search),
+        select(filters, ctrState.f, (v) => { ctrState.f = v; draw(); }, { icon: "sliders", label: T("ctr.filter") }), count),
+      body);
+    draw();
+    return wrap;
+  }
+
   let hostBox = null, curHost = null;
   function drawHostBody() {
     if (!hostBox || !curHost) return;
     const h = curHost;
-    const tabs = [["state", "host.tab.state", "cpu"], ["software", "host.tab.software", "apps"], ["history", "host.tab.history", "clock"], ["details", "host.tab.details", "info"]];
+    const tabs = [["state", "host.tab.state", "cpu"], ["software", "host.tab.software", "apps"]];
+    if (h.containers_count != null) tabs.push(["containers", "host.tab.containers", "box"]);
+    tabs.push(["history", "host.tab.history", "clock"], ["details", "host.tab.details", "info"]);
     if (me.role === "admin") tabs.push(["terminal", "host.tab.terminal", "terminal"]);
-    const content = hostTab === "software" ? softwareTab(h) : hostTab === "history" ? historyTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
+    const content = hostTab === "software" ? softwareTab(h) : hostTab === "containers" && h.containers_count != null ? containersTab(h) : hostTab === "history" ? historyTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
     hostBox.replaceChildren(
       el("div", { class: "tabs", role: "tablist" }, tabs.map(([k, key, ic]) => el("button", { role: "tab", class: "tab" + (hostTab === k ? " active" : ""), "aria-selected": String(hostTab === k),
         onclick: async () => { hostTab = k; if (k === "software" && swState.hostId !== h.id) { swState.items = null; drawHostBody(); await loadSoftware(h); } drawHostBody(); } },
