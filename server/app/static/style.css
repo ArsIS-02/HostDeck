@@ -179,9 +179,9 @@ tr.off { opacity: .7; } .c-cb { width: 44px; } .cell-host { display: flex; align
 .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
 .gauge { margin: 0; padding: 14px 12px 16px; background: var(--card); border: 1px solid var(--line2); border-radius: var(--r-l); box-shadow: var(--shadow); text-align: center; }
 .gauge.off { opacity: .55; } .gauge-svg { width: 100%; max-width: 230px; height: auto; display: block; margin: 0 auto; }
-.g-track { stroke: var(--track); } .g-val { stroke: var(--g-ok); transition: d .6s; } .l-warn .g-val { stroke: var(--g-warn); } .l-fail .g-val { stroke: var(--g-fail); }
+.g-track { stroke: var(--track); } .g-val { stroke: var(--g-ok); transition: stroke-dasharray .8s cubic-bezier(.3,1,.4,1), stroke .6s; } .l-warn .g-val { stroke: var(--g-warn); } .l-fail .g-val { stroke: var(--g-fail); }
 .g-tick { stroke: var(--muted); stroke-width: 1.2; opacity: .45; stroke-linecap: round; } .g-tick.major { stroke-width: 2; opacity: .8; }
-.g-needle { transform-origin: 100px 100px; transition: transform .9s cubic-bezier(.3,1.35,.45,1); }
+.g-needle { transform-origin: 100px 100px; transition: transform .8s cubic-bezier(.3,1.2,.45,1); }
 .g-hand { fill: var(--text); } .g-hub { fill: var(--text); } .g-hub-in { fill: var(--card); }
 .g-text { font: 700 27px var(--font); fill: var(--text); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .gauge figcaption { display: grid; gap: 2px; margin-top: 2px; } .g-title { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; } .g-sub { color: var(--muted); font-size: 13px; }
@@ -288,3 +288,20 @@ a.host-chip { text-decoration: none; color: var(--accent, #0a84ff); } a.host-chi
 .ctr-img { display: block; font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
 .ctr-ports { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .tbl tr.ctr-bad td:first-child { box-shadow: inset 3px 0 0 var(--warn); } .tbl tr.ctr-bad.ctr-red td:first-child { box-shadow: inset 3px 0 0 var(--fail); }
+
+/* живые приборы: цвет по порогу, пульс при критическом значении, мини-графики */
+.g-text, .g-hand, .g-hub { transition: fill .6s; } .l-warn .g-text { fill: var(--g-warn); } .l-fail .g-text { fill: var(--g-fail); } .l-warn .g-hand, .l-warn .g-hub { fill: var(--g-warn); } .l-fail .g-hand, .l-fail .g-hub { fill: var(--g-fail); }
+@keyframes g-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.l-fail .g-val, .l-fail .g-text { animation: g-pulse 1.4s ease-in-out infinite; }
+.l-warn .g-val { animation: g-pulse 3.2s ease-in-out infinite; }
+.gauge-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 12px; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; animation: g-pulse 1.6s ease-in-out infinite; }
+.chip.c-live { background: var(--ok-bg); color: var(--ok); }
+.spark-box { position: relative; margin: 8px 6px 0; height: 38px; } .spark { width: 100%; height: 100%; display: block; }
+.sp-line { stroke: var(--g-ok); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; } .sp-area { fill: var(--g-ok); opacity: .14; } .sp-base { stroke: var(--line2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+figure:has(.l-warn) .sp-line { stroke: var(--g-warn); } figure:has(.l-warn) .sp-area { fill: var(--g-warn); }
+figure:has(.l-fail) .sp-line { stroke: var(--g-fail); } figure:has(.l-fail) .sp-area { fill: var(--g-fail); }
+.sp-max { position: absolute; right: 2px; top: -2px; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .l-fail .g-val, .l-fail .g-text, .l-warn .g-val, .live-dot { animation: none; } .g-needle, .g-val { transition: none; } }
+
+.brand-name { display: flex; flex-direction: column; line-height: 1.1; } .brand-ver { font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }

@@ -61,5 +61,27 @@ cc = m.clean_containers([{"name": "web", "image": "i" * 500, "runtime": "docker"
 ok(len(cc) == 1 and len(cc[0]["image"]) == 200 and cc[0]["exit"] == 0 and "env" not in cc[0] and cc[0]["ports"] == ["0.0.0.0:80->80/tcp"], "контейнеры: лишние поля и мусор отброшены")
 ok(len(m.clean_containers([{"name": str(i)} for i in range(400)])) == 150, "контейнеры: не больше 150")
 
+# точки для мини-графиков
+db.x("INSERT INTO hosts(id,name,key_hash,created) VALUES('h2','host-2','x',?)", (time.time(),))
+mm = {"cpu": 40.0, "mem_used": 4e9, "mem_total": 8e9, "disk_pct": 55.0, "load1": 2.0, "cores": 4}
+base = 1_800_000_000.0
+m.record_metric_point("h2", mm, base)
+m.record_metric_point("h2", mm, base + 1)   # реже 3 секунд не храним
+m.record_metric_point("h2", dict(mm, cpu=60.0), base + 5)
+pts = m.metric_points("h2", base - 10, base + 100)
+ok(len(pts) == 2 and pts[0][1:] == [40.0, 50.0, 55.0, 50.0] and pts[1][1] == 60.0, "точки: 2 записи, память и нагрузка в процентах")
+ok(m.metric_points("h2", base + 2, base + 100) == [pts[1]], "точки: выборка после since")
+m.record_metric_point("h2", {"cpu": "x"}, base + 50)
+ok(len(m.metric_points("h2", base - 10, base + 100)) == 2, "точки: мусорные метрики не пишутся")
+for i in range(1000):
+    db.x("INSERT INTO metric_points(host_id,ts,cpu,mem,disk,load) VALUES('h2',?,?,1,1,1)", (base + 1000 + i, float(i % 100)))
+big = m.metric_points("h2", base + 999, base + 2000, limit=100)
+ok(0 < len(big) <= 101, "точки: избыток усредняется до ~100 штук")
+
+# версия сервера (VERSION) совпадает с версией агента: релиз у них общий
+import re as _re
+agent_v = _re.search(r'var version = "([^"]+)"', open(os.path.join(ROOT, "agent", "collect.go"), encoding="utf-8").read()).group(1)
+ok(m.APP_VERSION == agent_v, "версия сервера (%s) совпадает с версией агента (%s)" % (m.APP_VERSION, agent_v))
+
 print("\nИТОГО: %d/%d" % (sum(res), len(res)))
 sys.exit(0 if all(res) else 1)

@@ -192,29 +192,68 @@
     const [x0, y0] = polar(cx, cy, r, d0), [x1, y1] = polar(cx, cy, r, d1);
     return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${d1 - d0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
   }
-  // opts: {value (0..100|null), title, text, sub, level, ico}
+  // opts: {value (0..100|null), title, text, sub, level, ico, stale}. У результата есть метод update(opts): прибор меняется на месте, стрелка и дуга движутся плавно.
   function gauge(opts) {
     const cx = 100, cy = 100, r = 74;
-    const has = opts.value != null && !opts.stale;
-    const v = Math.max(0, Math.min(100, opts.value == null ? 0 : opts.value));
-    const lvl = !has ? "none" : opts.level || (v >= 90 ? "fail" : v >= 75 ? "warn" : "ok");
-    const ang = A0 + (A1 - A0) * (v / 100);
-    const s = svg("svg", { viewBox: "0 0 200 162", class: "gauge-svg l-" + lvl, role: "img", "aria-label": `${opts.title}: ${opts.text}` });
+    const s = svg("svg", { viewBox: "0 0 200 162", class: "gauge-svg", role: "img" });
     s.append(svg("path", { d: arc(cx, cy, r, A0, A1), class: "g-track", fill: "none", "stroke-width": "12", "stroke-linecap": "round" }));
-    if (has && v > 0.5) s.append(svg("path", { d: arc(cx, cy, r, A0, ang), class: "g-val", fill: "none", "stroke-width": "12", "stroke-linecap": "round" }));
+    const valArc = svg("path", { d: arc(cx, cy, r, A0, A1), class: "g-val", fill: "none", "stroke-width": "12", "stroke-linecap": "round", pathLength: "100", "stroke-dasharray": "0 100" });
+    s.append(valArc);
     for (let i = 0; i <= 10; i++) {
       const d = A0 + (A1 - A0) * (i / 10), major = i % 5 === 0;
       const [x0, y0] = polar(cx, cy, r - 12, d), [x1, y1] = polar(cx, cy, r - (major ? 21 : 17), d);
       s.append(svg("line", { x1: x0.toFixed(1), y1: y0.toFixed(1), x2: x1.toFixed(1), y2: y1.toFixed(1), class: "g-tick" + (major ? " major" : "") }));
     }
-    const needle = svg("g", { class: "g-needle", style: `transform: rotate(${has ? ang : A0}deg)` },
-      svg("path", { d: `M${cx - 3} ${cy}L${cx} ${cy - 58}L${cx + 3} ${cy}Z`, class: "g-hand" }));
-    s.append(needle, svg("circle", { cx, cy, r: 7, class: "g-hub" }), svg("circle", { cx, cy, r: 2.6, class: "g-hub-in" }));
+    const needle = svg("g", { class: "g-needle" }, svg("path", { d: `M${cx - 3} ${cy}L${cx} ${cy - 58}L${cx + 3} ${cy}Z`, class: "g-hand" }));
     const val = svg("text", { x: cx, y: 144, "text-anchor": "middle", class: "g-text" });
-    val.textContent = has ? opts.text : "—";
-    s.append(val);
-    return el("figure", { class: "gauge" + (has ? "" : " off") }, s,
-      el("figcaption", {}, el("span", { class: "g-title" }, opts.ico ? icon(opts.ico, 15) : null, opts.title), opts.sub ? el("span", { class: "g-sub" }, opts.sub) : null));
+    s.append(needle, svg("circle", { cx, cy, r: 7, class: "g-hub" }), svg("circle", { cx, cy, r: 2.6, class: "g-hub-in" }), val);
+    const title = el("span", { class: "g-title" }, opts.ico ? icon(opts.ico, 15) : null, opts.title);
+    const sub = el("span", { class: "g-sub" });
+    const fig = el("figure", { class: "gauge" }, s, el("figcaption", {}, title, sub));
+    fig.update = (o) => {
+      const has = o.value != null && !o.stale;
+      const v = Math.max(0, Math.min(100, o.value == null ? 0 : o.value));
+      const lvl = !has ? "none" : o.level || (v >= 90 ? "fail" : v >= 75 ? "warn" : "ok");
+      s.setAttribute("class", "gauge-svg l-" + lvl);
+      s.setAttribute("aria-label", `${o.title}: ${o.text}`);
+      const ang = A0 + (A1 - A0) * ((has ? v : 0) / 100);
+      needle.style.transform = `rotate(${has ? ang : A0}deg)`;
+      valArc.setAttribute("stroke-dasharray", `${has && v > 0.5 ? v : 0} 100`);
+      val.textContent = has ? o.text : "—";
+      sub.textContent = o.sub || "";
+      fig.classList.toggle("off", !has);
+    };
+    fig.update(opts);
+    return fig;
+  }
+
+  // Мини-график значений 0..100 за период [t0, t1]; spark.set(points, t0, t1), points = [[t, value|null], ...]
+  function spark() {
+    const W = 200, H = 38;
+    const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "spark", preserveAspectRatio: "none", "aria-hidden": "true" });
+    const area = svg("path", { class: "sp-area", d: "" }), line = svg("path", { class: "sp-line", d: "", fill: "none" });
+    root.append(svg("line", { x1: 0, y1: H - 0.5, x2: W, y2: H - 0.5, class: "sp-base" }), area, line);
+    const wrap = el("div", { class: "spark-box" }, root);
+    const cap = el("span", { class: "sp-max" });
+    wrap.append(cap);
+    wrap.set = (pts, t0, t1) => {
+      const ok = pts.filter((p) => p[1] != null && p[0] >= t0 && p[0] <= t1);
+      if (ok.length < 2) { line.setAttribute("d", ""); area.setAttribute("d", ""); cap.textContent = ""; return; }
+      const mx = Math.max(...ok.map((p) => p[1])), top = Math.min(100, Math.max(25, Math.ceil((mx * 1.15) / 25) * 25));
+      const X = (t) => ((t - t0) / (t1 - t0)) * W, Y = (v) => H - 2 - (Math.min(v, top) / top) * (H - 6);
+      // разрыв (хост был выключен) рисуем разрывом линии: больше 5 минут, а на длинных периодах больше 1/40 периода
+      const gap = Math.max(300, (t1 - t0) / 40);
+      let d = "", dArea = "", prevT = null, seg = [];
+      const flush = () => {
+        if (seg.length > 1) { d += "M" + seg.map(([x, y]) => x.toFixed(1) + " " + y.toFixed(1)).join("L"); dArea += `M${seg[0][0].toFixed(1)} ${H}L` + seg.map(([x, y]) => x.toFixed(1) + " " + y.toFixed(1)).join("L") + `L${seg[seg.length - 1][0].toFixed(1)} ${H}Z`; }
+        seg = [];
+      };
+      for (const p of ok) { if (prevT != null && p[0] - prevT > gap) flush(); seg.push([X(p[0]), Y(p[1])]); prevT = p[0]; }
+      flush();
+      line.setAttribute("d", d); area.setAttribute("d", dArea);
+      cap.textContent = top + "%";
+    };
+    return wrap;
   }
 
   // --- диалоги и уведомления -------------------------------------------------------------------------
@@ -330,5 +369,5 @@
     setTimeout(() => { n.classList.add("out"); setTimeout(() => n.remove(), 250); }, kind === "error" ? 6000 : 3200);
   }
 
-  window.UI = { el, svg, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, dialog, confirmDialog, toast, closeSelect, tip, tipHide };
+  window.UI = { el, svg, icon, hostIcon, badge, chip, progress, checkbox, button, segmented, select, gauge, spark, dialog, confirmDialog, toast, closeSelect, tip, tipHide };
 })();

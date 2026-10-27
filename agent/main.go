@@ -209,6 +209,10 @@ func cmdRun(args []string) {
 				go send()
 			case "software":
 				go sendSoftware()
+			case "live":
+				if extendLive(time.Now(), cmd.Sec) {
+					go liveLoop(ctx, c.reportLiveMetrics)
+				}
 			case "update":
 				go handleUpdate(ctx, c)
 			case "term_open":

@@ -100,6 +100,7 @@ type Command struct {
 	Data string `json:"data,omitempty"`
 	Cols int    `json:"cols,omitempty"`
 	Rows int    `json:"rows,omitempty"`
+	Sec  int    `json:"sec,omitempty"`
 }
 
 func (c *Client) poll(ctx context.Context) ([]Command, error) {
@@ -120,6 +121,12 @@ func (c *Client) reportPosture(ctx context.Context, p Posture, osName string) er
 
 func (c *Client) reportMetrics(ctx context.Context, m Metrics) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return c.post(ctx, "/agent/report", map[string]any{"kind": "metrics", "data": m}, nil)
+}
+
+func (c *Client) reportLiveMetrics(ctx context.Context, m Metrics) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	return c.post(ctx, "/agent/report", map[string]any{"kind": "metrics", "data": m}, nil)
 }

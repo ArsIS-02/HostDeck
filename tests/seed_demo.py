@@ -67,4 +67,17 @@ for i, (name, model, chip, mem, ver, st, m) in enumerate(HOSTS):
     seen = now - (5 if i != 3 else 3600 * 5)
     db.x("INSERT OR REPLACE INTO hosts(id,name,os,agent_version,key_hash,created,last_seen,posture,posture_at,software,software_at,metrics,metrics_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
          (hid, name, posture["info"]["os"], "0.2.0", "x", now - 86400 * 9, seen, json.dumps(posture), seen, json.dumps(sw), seen, json.dumps(metrics), seen))
+    # история метрик для мини-графиков: 6 часов с шагом в минуту
+    import math
+    db.x("DELETE FROM metric_points WHERE host_id=?", (hid,))
+    rows = []
+    for k in range(360, 0, -1):
+        t = now - k * 60
+        w = math.sin(k / 23.0 + i) * 0.5 + 0.5
+        spike = 1 if (k % 97) < 6 else 0
+        cpu = max(1.0, min(99.0, m["cpu"] * (0.5 + w) + spike * 35 + random.random() * 6))
+        mem = max(5.0, min(98.0, m["mu"] * 100 + math.sin(k / 41.0) * 6 + random.random() * 2))
+        rows.append((hid, t, round(cpu, 1), round(mem, 1), float(m["disk"]), round(min(100.0, cpu / 100 * 80 + random.random() * 5), 1)))
+    for r in rows:
+        db.x("INSERT INTO metric_points(host_id,ts,cpu,mem,disk,load) VALUES(?,?,?,?,?,?)", r)
 print("ok")

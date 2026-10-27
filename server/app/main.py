@@ -322,7 +322,7 @@ async def login(request: Request):
     db.x("INSERT INTO sessions(token_hash,user_id,created,expires) VALUES(?,?,?,?)",
          (db.sha(tok), row["id"], now, now + SESSION_TTL))
     db.audit(name, "login", detail=ip)
-    resp = JSONResponse({"name": row["name"], "role": row["role"]})
+    resp = JSONResponse({"name": row["name"], "role": row["role"], "version": APP_VERSION})
     resp.set_cookie(SESSION_COOKIE, tok, max_age=SESSION_TTL, httponly=True, samesite="strict",
                     secure=request.url.scheme == "https", path="/")
     return resp
@@ -337,11 +337,23 @@ async def logout(request: Request):
     return resp
 
 
+def read_version():
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "VERSION"), encoding="utf-8") as f:
+            v = f.read().strip()
+        return v if re.fullmatch(r"[0-9A-Za-z.+-]{1,20}", v) else ""
+    except OSError:
+        return ""
+
+
+APP_VERSION = read_version()
+
+
 async def me(request: Request):
     u = current_user(request)
     if not u:
         return JSONResponse(None)  # не 401: иначе консоль браузера засоряется ошибкой на странице входа
-    return JSONResponse({"name": u["name"], "role": u["role"]})
+    return JSONResponse({"name": u["name"], "role": u["role"], "version": APP_VERSION})
 
 
 # --- хосты ---------------------------------------------------------------
@@ -467,6 +479,63 @@ def vtuple(v):
         return tuple(int(x) for x in str(v).split("-")[0].split("."))
     except ValueError:
         return None
+
+
+METRIC_KEEP_SEC = 24 * 3600
+METRIC_MIN_GAP = 3.0           # чаще одной точки в 3 секунды не храним
+LIVE_EVERY = 30.0              # как часто сервер повторяет агенту просьбу о живом режиме
+LIVE_MIN_AGENT = (0, 7, 0)
+_last_point = {}
+_last_live = {}
+_point_writes = 0
+
+
+def record_metric_point(hid, m, now):
+    """Точка для мини-графиков: загрузка процессора, память, диск и нагрузка в процентах."""
+    global _point_writes
+    if now - _last_point.get(hid, 0) < METRIC_MIN_GAP:
+        return
+    _last_point[hid] = now
+    try:
+        mem = (float(m["mem_used"]) / float(m["mem_total"]) * 100) if m.get("mem_total") else None
+        cores = max(1.0, float(m.get("cores") or 1))
+        load = min(100.0, float(m.get("load1") or 0) / cores * 100)
+        db.x("INSERT INTO metric_points(host_id,ts,cpu,mem,disk,load) VALUES(?,?,?,?,?,?)",
+             (hid, now, round(float(m.get("cpu") or 0), 1), None if mem is None else round(mem, 1),
+              round(float(m.get("disk_pct") or 0), 1), round(load, 1)))
+    except (TypeError, ValueError, KeyError):
+        return
+    _point_writes += 1
+    if _point_writes % 200 == 0:
+        db.x("DELETE FROM metric_points WHERE ts<?", (now - METRIC_KEEP_SEC,))
+
+
+def metric_points(hid, since, until=None, limit=240):
+    """Точки за период, не больше limit: при избытке усредняются по равным интервалам времени."""
+    until = until or time.time()
+    rows = db.q("SELECT ts,cpu,mem,disk,load FROM metric_points WHERE host_id=? AND ts>? AND ts<=? ORDER BY ts", (hid, since, until))
+    pts = [[r["ts"], r["cpu"], r["mem"], r["disk"], r["load"]] for r in rows]
+    if len(pts) <= limit:
+        return pts
+    step = (until - since) / limit
+    out, bucket, cur = [], [], None
+    for p in pts:
+        b = int((p[0] - since) / step)
+        if cur is not None and b != cur and bucket:
+            out.append(_avg_bucket(bucket))
+            bucket = []
+        cur = b
+        bucket.append(p)
+    if bucket:
+        out.append(_avg_bucket(bucket))
+    return out
+
+
+def _avg_bucket(b):
+    def avg(i):
+        v = [x[i] for x in b if x[i] is not None]
+        return round(sum(v) / len(v), 1) if v else None
+    return [b[-1][0], avg(1), avg(2), avg(3), avg(4)]
 
 
 def clean_containers(raw):
@@ -771,6 +840,48 @@ async def exception_delete(request: Request):
     return JSONResponse({"ok": True})
 
 
+async def host_live(request: Request):
+    """Живые приборы: просит агента слать метрики чаще и возвращает свежие метрики и точки с момента since."""
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    row = db.q1("SELECT metrics, metrics_at, agent_version, last_seen FROM hosts WHERE id=?", (hid,))
+    if not row:
+        return err("хост не найден", 404)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    try:
+        since = float((body or {}).get("since") or 0)
+    except (TypeError, ValueError):
+        since = 0.0
+    now = time.time()
+    v = vtuple(row["agent_version"])
+    live = bool(v and v >= LIVE_MIN_AGENT)
+    if live and now - _last_live.get(hid, 0) >= LIVE_EVERY:
+        _last_live[hid] = now
+        await queue_for(hid).put({"id": secrets.token_hex(4), "type": "live", "sec": 60})
+    return JSONResponse({"live": live, "metrics": json.loads(row["metrics"]) if row["metrics"] else None, "metrics_at": row["metrics_at"],
+                         "points": metric_points(hid, max(since, now - METRIC_KEEP_SEC), limit=240) if since > 0 else [], "now": now})
+
+
+async def host_metric_history(request: Request):
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    try:
+        span = min(max(int(request.query_params.get("span", "900")), 60), METRIC_KEEP_SEC)
+    except ValueError:
+        span = 900
+    now = time.time()
+    return JSONResponse({"span": span, "now": now, "points": metric_points(hid, now - span, now, limit=180)})
+
+
 async def host_refresh(request: Request):
     u, e = need(request, "operator")
     if e:
@@ -925,6 +1036,7 @@ async def delete_hosts(user, ids):
         db.x("DELETE FROM exceptions WHERE host_id=?", (hid,))
         db.x("DELETE FROM history WHERE host_id=?", (hid,))
         db.x("DELETE FROM idx_points WHERE host_id=?", (hid,))
+        db.x("DELETE FROM metric_points WHERE host_id=?", (hid,))
         queues.pop(hid, None)
         n += 1
     return n
@@ -1088,6 +1200,7 @@ async def agent_report(request: Request):
         if not isinstance(d, dict) or len(json.dumps(d)) > 4_000:
             return err("некорректные данные")
         db.x("UPDATE hosts SET metrics=?, metrics_at=?, last_seen=? WHERE id=?", (json.dumps(d), now, now, host["id"]))
+        record_metric_point(host["id"], d, now)
         return JSONResponse({"ok": True})
     if kind == "software":
         d = data.get("data")
@@ -1249,6 +1362,8 @@ app = Starlette(
         Route("/api/hosts", hosts_list),
         Route("/api/hosts/{id}", host_detail),
         Route("/api/hosts/{id}/refresh", host_refresh, methods=["POST"]),
+        Route("/api/hosts/{id}/live", host_live, methods=["POST"]),
+        Route("/api/hosts/{id}/metrics/history", host_metric_history),
         Route("/api/hosts/{id}/history", host_history),
         Route("/api/hosts/{id}/profile", host_profile_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions", exception_set, methods=["POST"]),
