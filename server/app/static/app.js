@@ -119,6 +119,22 @@
   }
 
   // --- справка по проверкам и инструкция администратора (тексты в help.js) ---------------------------------------------------------
+  // блок команды в подсказке: текст выделяется мышью целиком, рядом кнопка «Копировать»
+  async function copyText(text, node) {
+    try { await navigator.clipboard.writeText(text); toast(T("common.copied")); return; } catch (_) { /* нет доступа к буферу: запасной путь ниже */ }
+    try {
+      const ta = el("textarea", { class: "copy-tmp", "aria-hidden": "true" }); ta.value = text; document.body.append(ta); ta.select();
+      const okc = document.execCommand("copy"); ta.remove();
+      if (okc) { toast(T("common.copied")); return; }
+    } catch (_) { /* выделяем текст блока, пользователь скопирует сам */ }
+    if (node) { const rg = document.createRange(); rg.selectNodeContents(node); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(rg); }
+  }
+  function cmdBlock(text) {
+    const pre = el("pre", {}, text);
+    return el("div", { class: "cmd-wrap" }, pre, el("button", { class: "cmd-copy", type: "button", title: T("common.copy"), "aria-label": T("common.copy"),
+      onclick: (e) => { e.stopPropagation(); copyText(text, pre); } }, icon("copy", 14), el("span", {}, T("common.copy"))));
+  }
+
   function checkTip(c, h) {
     const H = window.HELP.get(), U = H.ui, lin = h && (h.os || "").toLowerCase() === "linux";
     const info = (lin && H.checksLinux[c.id]) || H.checks[c.id];
@@ -136,7 +152,7 @@
         const dyn = window.HELP.cmdFor ? window.HELP.cmdFor(c, h) : null;
         const blocks = dyn || [info.cmd, info.cmd2].filter(Boolean);
         if (blocks.length && c.status !== "info" && c.status !== "na") {
-          kids.push(el("h4", {}, dyn ? U.cmd + " · " + U.cmd_for : U.cmd), blocks.map((b) => el("pre", {}, b)));
+          kids.push(el("h4", {}, dyn ? U.cmd + " · " + U.cmd_for : U.cmd), blocks.map((b) => cmdBlock(b)));
           kids.push(el("p", { class: "run" }, U.run));
         }
       }

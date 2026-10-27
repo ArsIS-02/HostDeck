@@ -254,9 +254,10 @@
   }
 
   // --- всплывающая подсказка: по наведению, фокусу и касанию; её содержимое можно выделять и копировать -------------------------------
-  let tipBox = null, tipTarget = null, tipTimer = 0;
+  let tipBox = null, tipTarget = null, tipTimer = 0, tipPinned = false, tipHover = false;
   function tipHide() {
     clearTimeout(tipTimer);
+    tipPinned = false; tipHover = false;
     if (tipBox) { tipBox.remove(); tipBox = null; }
     if (tipTarget) { tipTarget.removeAttribute("aria-describedby"); tipTarget = null; }
   }
@@ -274,8 +275,18 @@
     tipHide();
     const id = "tip-" + Math.random().toString(36).slice(2, 7);
     tipBox = el("div", { class: "tip", role: "tooltip", id }, build());
-    tipBox.addEventListener("mouseenter", () => clearTimeout(tipTimer));
-    tipBox.addEventListener("mouseleave", () => { tipTimer = setTimeout(tipHide, 180); });
+    // подсказку можно «закрепить»: нажатие внутри неё (выделение текста, кнопка «Копировать») отменяет автозакрытие;
+    // закрывается она по Esc, по кнопке × или по щелчку вне подсказки
+    const closeBtn = el("button", { class: "tip-x", type: "button", "aria-label": window.I18N.t("common.close"), title: window.I18N.t("common.close") }, "×");
+    closeBtn.addEventListener("click", (e) => { e.stopPropagation(); tipHide(); });
+    tipBox.prepend(closeBtn);
+    tipBox.addEventListener("pointerdown", () => { tipPinned = true; tipBox && tipBox.classList.add("pinned"); clearTimeout(tipTimer); });
+    tipBox.addEventListener("mouseenter", () => { tipHover = true; clearTimeout(tipTimer); });
+    tipBox.addEventListener("mouseleave", () => {
+      tipHover = false;
+      if (tipPinned) return;
+      tipTimer = setTimeout(() => { const sel = window.getSelection && window.getSelection(); if (!(sel && !sel.isCollapsed && tipBox && tipBox.contains(sel.anchorNode))) tipHide(); }, 180);
+    });
     document.body.append(tipBox);
     tipTarget = target; target.setAttribute("aria-describedby", id);
     tipShownAt = performance.now();
@@ -287,9 +298,9 @@
     target.setAttribute("tabindex", "0"); target.setAttribute("role", "button");
     target.setAttribute("aria-label", window.I18N.t("tip.aria"));
     target.addEventListener("mouseenter", () => { clearTimeout(tipTimer); tipTimer = setTimeout(() => tipShow(target, build), 120); });
-    target.addEventListener("mouseleave", () => { clearTimeout(tipTimer); tipTimer = setTimeout(tipHide, 180); });
+    target.addEventListener("mouseleave", () => { clearTimeout(tipTimer); tipTimer = setTimeout(() => { if (!tipPinned && !tipHover) tipHide(); }, 180); });
     target.addEventListener("focus", () => tipShow(target, build));
-    target.addEventListener("blur", () => { tipTimer = setTimeout(tipHide, 120); });
+    target.addEventListener("blur", () => { tipTimer = setTimeout(() => { if (!tipPinned && !tipHover) tipHide(); }, 120); });
     target.addEventListener("click", (e) => { e.stopPropagation(); if (tipTarget === target) tipHide(); else tipShow(target, build); });   // касание на телефоне
     target.addEventListener("keydown", (e) => { if (e.key === "Escape") tipHide(); });
     return target;
@@ -299,6 +310,7 @@
   // к элементу) подсказку не закрываем, а переставляем к элементу.
   document.addEventListener("scroll", (e) => {
     if (tipBox && e.target instanceof Node && tipBox.contains(e.target)) return;
+    if (tipPinned) return;   // закреплённая подсказка остаётся на месте при прокрутке страницы
     if (tipBox && performance.now() - tipShownAt < 400) { tipPlace(); return; }
     tipHide();
   }, true);   // прокрутка внутри самой подсказки её не закрывает
