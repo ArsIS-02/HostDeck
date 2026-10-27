@@ -50,6 +50,16 @@ for i, (name, model, chip, mem, ver, st, m) in enumerate(HOSTS):
     posture = {"collected_at": now, "info": {"os": "macOS" if mac else "linux", "os_version": ver, "model": model or "Raspberry Pi 4B", "chip": chip,
                "memory": mem, "arch": "arm64", "hostname": name, "agent": "0.2.0", "boot_time": str(int(now - 86400 * (3 + i))), "console_user": "demo" if mac else "", **({"auto_update": "on"} if i != 3 else {})},
                "checks": ck if mac else [{"id": "platform", "status": "info", "value": "mac_only"}, ck[-1]]}
+    if i == 3:  # у homeserver есть контейнеры: рабочие, упавший и дубликат в Docker
+        posture["containers"] = [
+            {"name": "caddy", "image": "docker.io/library/caddy:2.8", "runtime": "podman", "owner": "redos", "state": "running", "restart": "always", "health": "healthy", "ports": ["0.0.0.0:80->80/tcp", "0.0.0.0:443->443/tcp"], "started": int(now - 10 * 86400)},
+            {"name": "atrium", "image": "localhost/atrium:1.0.0", "runtime": "podman", "owner": "redos", "state": "running", "restart": "always", "ports": ["0.0.0.0:5000->5000/tcp"], "started": int(now - 43 * 3600)},
+            {"name": "myhomelab-v6-old", "image": "localhost/myhomelab:v6", "runtime": "podman", "owner": "redos", "state": "exited", "exit": 137, "restart": "always", "ports": ["0.0.0.0:5000->5000/tcp"]},
+            {"name": "logatlas", "image": "localhost/logatlas:latest", "runtime": "podman", "state": "running", "restart": "unless-stopped", "health": "healthy", "started": int(now - 3 * 86400)},
+            {"name": "logatlas", "image": "logatlas:old", "runtime": "docker", "state": "exited", "exit": 128, "restart": "always"},
+            {"name": "portainer", "image": "docker.io/portainer/portainer-ce:2.21", "runtime": "podman", "state": "running", "restart": "always", "ports": ["0.0.0.0:9443->9443/tcp"], "started": int(now - 5 * 86400)},
+            {"name": "fluent-bit", "image": "docker.io/fluent/fluent-bit:3.1", "runtime": "podman", "state": "running", "restart": "always", "started": int(now - 2 * 86400)},
+        ]
     tot = float(mem.split()[0]) * 2**30
     metrics = {"at": now, "cpu": m["cpu"], "load1": m["cpu"] / 100 * 8, "cores": 8, "mem_used": tot * m["mu"], "mem_total": tot, "swap_pct": 12 * i,
                "disk_pct": m["disk"], "disk_total": 494e9, "disk_free": 494e9 * (1 - m["disk"] / 100), "battery": m["bat"], "battery_chrg": i == 1}

@@ -79,13 +79,29 @@
           out.push(`# если служба нужна, но описание есть (Quadlet) — после правки перечитайте конфигурацию\nls ~${m[2]}/.config/containers/systemd/\n${asUser(m[2])}systemctl --user daemon-reload`);
         } else if ((m = it.match(/^([^:@\s]+)(?:@(\S+))?: (.+)$/))) {
           const [, name, user, why] = m;
-          const base = `${asUser(user)}podman`;
+          const base = user === "docker" ? "sudo docker" : `${asUser(user)}podman`;
           out.push(`# ${name}: ${why}\n${base} logs --tail 30 ${q(name)}` + (/exited|not started/.test(why) ? `\n${base} start ${q(name)}` : "") + (/restart/.test(why) ? `\n${base} inspect ${q(name)} --format '{{.State.Status}} {{.RestartCount}} {{.State.ExitCode}}'` : ""));
           if (/exited|not started/.test(why)) out.push(`# если запуск падает с «address already in use» — найдите, кто держит порт, и не заменён ли контейнер другим\n${base} port ${q(name)}\nsudo ss -ltnp\n${base} ps -a --format '{{.Names}} {{.Ports}} {{.Status}}'`,
             `# контейнер больше не нужен (заменён другим) — удалите, чтобы он не пытался стартовать после перезагрузки; образы и тома останутся\n${base} rm ${q(name)}`);
         }
       }
       if (items.some((x) => /podman-restart\.service disabled/.test(x))) out.push("# после перезагрузки контейнеры с restart=always сами не стартуют, пока служба выключена\nsudo systemctl enable --now podman-restart.service");
+      return out.length ? out : null;
+    },
+    container_conflicts(c) {
+      // detail: «name ИМЯ (среда+среда)», «port 5000/tcp (имя+имя@пользователь+имя@docker)»
+      const out = [];
+      const envCmd = (env, rest) => (env === "docker" ? `sudo docker ${rest}` : env.startsWith("podman@") ? `sudo -u ${q(env.slice(7))} env XDG_RUNTIME_DIR=/run/user/$(id -u ${q(env.slice(7))}) podman ${rest}` : `sudo podman ${rest}`);
+      for (const it of list(c.detail).slice(0, 4)) {
+        let m;
+        if ((m = it.match(/^name (\S+) \((.+)\)$/))) {
+          const envs = m[2].split("+").map((x) => x.trim()).filter(Boolean);
+          out.push(`# ${m[1]}: одно имя в разных средах — найдите настоящую копию и её данные\n` + envs.map((e) => envCmd(e, `ps -a --filter name=${q(m[1])} --format '{{.Names}} {{.Status}} {{.Ports}}'`)).join("\n"));
+          out.push(`# лишнюю копию удалите (образы и тома останутся)\n` + envs.map((e) => "# " + envCmd(e, `rm ${q(m[1])}`)).join("\n"));
+        } else if ((m = it.match(/^port (\d+)\/(tcp|udp) \((.+)\)$/))) {
+          out.push(`# порт ${m[1]}: кто его держит\nsudo ss -l${m[2] === "udp" ? "u" : "t"}np | grep ':${m[1]} '\nsudo podman ps -a --format '{{.Names}} {{.Ports}} {{.Status}}'\nsudo docker ps -a --format '{{.Names}} {{.Ports}} {{.Status}}'`);
+        }
+      }
       return out.length ? out : null;
     },
     failed_units(c) {

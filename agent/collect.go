@@ -11,13 +11,14 @@ import (
 	"time"
 )
 
-var version = "0.6.3"
+var version = "0.7.0"
 
 // Posture — снимок состояния хоста, который уходит на сервер.
 type Posture struct {
 	CollectedAt int64             `json:"collected_at"`
 	Info        map[string]string `json:"info"`
 	Checks      []Check           `json:"checks"`
+	Containers  []CtrInfo         `json:"containers,omitempty"`
 }
 
 var collectMu sync.Mutex
@@ -39,6 +40,7 @@ func collect() Posture {
 	p.Info["agent"] = version
 	p.Info["arch"] = runtime.GOARCH
 	platformCollect(&p)
+	p.Containers = takeContainers()
 	if allowTerminal {
 		p.Info["terminal"] = "on"
 	}

@@ -359,6 +359,13 @@
         fix: ["Включите службу времени и принудительно подстройте часы."],
         cmd: "sudo systemctl enable --now chronyd\nsudo chronyc makestep\ntimedatectl status",
       },
+      container_conflicts: {
+        what: "Контейнеры, которые мешают друг другу. Замечание ставится, если одно и то же имя есть в разных средах (Podman от root, Podman пользователя, Docker) или если контейнер с политикой always/unless-stopped остановлен, а его порт хоста занят другим контейнером.",
+        risk: "Обычно это остаток старого запуска. Рабочая копия и остановленная путаются при разборе сбоев, а после перезагрузки контейнеры начинают бороться за один порт: запускается тот, кто успел, остальные падают с «address already in use».",
+        fix: ["Определите, какая копия настоящая: где её данные и кто занимает порт.", "Лишнюю остановите и удалите, чтобы она не стартовала после перезагрузки (образы и тома останутся)."],
+        cmd: "sudo ss -ltnp | grep ':ПОРТ '\nsudo podman ps -a --filter name=ИМЯ\nsudo docker ps -a --filter name=ИМЯ",
+        cmd2: "sudo podman rm ИМЯ   # или docker rm ИМЯ: убрать ненужную копию",
+      },
       containers: {
         what: "Состояние контейнеров Podman и Docker на хосте: и от имени root, и от имени обычных пользователей (rootless Podman). Замечание появляется, если контейнер с политикой перезапуска always или unless-stopped остановлен с ошибкой или не стартовал, если контейнер нездоров (unhealthy), если пользовательская служба контейнера сбойная, а также если контейнеры с политикой always есть, а podman-restart.service выключен (после перезагрузки они не поднимутся). Ошибка (красный) ставится, когда контейнер перезапускается по кругу.",
         risk: "Остановленный после перезагрузки контейнер означает, что служба молча не работает: мониторинг, прокси или агент перестают отвечать, а хост выглядит исправным. Цикл перезапусков забивает журнал и нагружает хост. Лишняя копия того же контейнера (например, rootless-юнит рядом с системным) конфликтует по портам и создаёт тысячи ошибок.",
@@ -820,6 +827,13 @@
         risk: "A wrong clock breaks TLS certificates and Kerberos/FreeIPA, and timestamps in logs stop matching across hosts.",
         fix: ["Enable the time service and step the clock."],
         cmd: "sudo systemctl enable --now chronyd\nsudo chronyc makestep\ntimedatectl status",
+      },
+      container_conflicts: {
+        what: "Containers that get in each other's way. A warning is raised when the same name exists in several environments (root Podman, a user's Podman, Docker), or when a container with restart policy always/unless-stopped is stopped while another container holds its host port.",
+        risk: "Usually a leftover from an old deployment. The working copy and the stopped one are easy to confuse when debugging, and after a reboot the containers race for one port: the first wins, the rest fail with \"address already in use\".",
+        fix: ["Find out which copy is the real one: where its data is and who holds the port.", "Stop and remove the extra one so it does not start after a reboot (images and volumes stay)."],
+        cmd: "sudo ss -ltnp | grep ':PORT '\nsudo podman ps -a --filter name=NAME\nsudo docker ps -a --filter name=NAME",
+        cmd2: "sudo podman rm NAME   # or docker rm NAME: remove the unneeded copy",
       },
       containers: {
         what: "State of Podman and Docker containers on the host, both as root and as ordinary users (rootless Podman). A warning appears when a container with restart policy always or unless-stopped is stopped with an error or never started, a container is unhealthy, a user container unit has failed, or containers with policy always exist while podman-restart.service is disabled (they will not come back after a reboot). An error (red) is raised when a container restarts in a loop.",

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +127,67 @@ func TestJudgeContainers(t *testing.T) {
 	_, _, _, d = judgeContainers([]ctr{{ID: "z", Name: "z", Owner: "user", Status: "exited", Exit: 1, Policy: "always"}}, nil, "enabled", now)
 	if !strings.Contains(d, "z@user: exited(1)") {
 		t.Errorf("метка: %q", d)
+	}
+}
+
+const inspectPorts = `[
+ {"Id":"a1a1a1a1","Name":"/atrium","ImageName":"localhost/atrium:latest","RestartCount":0,
+  "State":{"Status":"running","StartedAt":"2026-10-25T10:00:00Z"},
+  "HostConfig":{"RestartPolicy":{"Name":"always"},"PortBindings":{"5000/tcp":[{"HostIp":"","HostPort":"5000"}]}},
+  "Config":{"Image":"ignored","Env":["SECRET=hunter2"],"Cmd":["run","--token","abc"]}},
+ {"Id":"b2b2b2b2","Name":"myhomelab-v6-old","RestartCount":0,
+  "State":{"Status":"exited","ExitCode":137},
+  "HostConfig":{"RestartPolicy":{"Name":"always"},"PortBindings":{"5000/tcp":[{"HostIp":"0.0.0.0","HostPort":"5000"}]}},
+  "Config":{"Image":"myhomelab:v6"}}
+]`
+
+func TestInspectPortsAndInfo(t *testing.T) {
+	cs, err := parseInspect(inspectPorts, "redos")
+	if err != nil || len(cs) != 2 {
+		t.Fatalf("%v %d", err, len(cs))
+	}
+	if cs[0].Image != "localhost/atrium:latest" || cs[1].Image != "myhomelab:v6" {
+		t.Errorf("образы: %q %q", cs[0].Image, cs[1].Image)
+	}
+	if len(cs[0].Binds) != 1 || cs[0].Binds[0].String() != "0.0.0.0:5000->5000/tcp" {
+		t.Errorf("порты: %+v", cs[0].Binds)
+	}
+	for i := range cs {
+		cs[i].Runtime = "podman"
+	}
+	info := ctrInfos(cs)
+	b := strings.ToLower(fmt.Sprintf("%+v", info))
+	if strings.Contains(b, "hunter2") || strings.Contains(b, "token") {
+		t.Errorf("в отчёт попали переменные или команда запуска: %s", b)
+	}
+	if len(info) != 2 || info[0].Name != "atrium" || info[0].Owner != "redos" || info[0].Started == 0 || info[1].Started != 0 {
+		t.Errorf("%+v", info)
+	}
+}
+
+func TestJudgeConflicts(t *testing.T) {
+	cs, _ := parseInspect(inspectPorts, "redos")
+	for i := range cs {
+		cs[i].Runtime = "podman"
+	}
+	st, v, n, d := judgeConflicts(cs)
+	// порт 5000: atrium работает, остановленный старый контейнер должен подниматься сам (restart=always)
+	if st != "warn" || v != "ctr_conflict" || n != 1 || !strings.Contains(d, "port 5000/tcp") || !strings.Contains(d, "myhomelab-v6-old@redos") {
+		t.Errorf("%s %s %v %q", st, v, n, d)
+	}
+	// остановленный без restart-политики порт не делит всерьёз
+	cs[1].Policy = "no"
+	if st, _, _, _ := judgeConflicts(cs); st != "" {
+		t.Errorf("лишнее замечание: %q", st)
+	}
+	// то же имя в Docker и Podman
+	a := []ctr{{Name: "logatlas", Runtime: "podman", Owner: "root"}, {Name: "logatlas", Runtime: "docker", Owner: "root"}, {Name: "web", Runtime: "podman", Owner: "root"}}
+	st, _, n, d = judgeConflicts(a)
+	if st != "warn" || n != 1 || d != "name logatlas (podman+docker)" {
+		t.Errorf("%s %v %q", st, n, d)
+	}
+	// одно имя в одной среде (два rootless-пользователя с разными именами среды — это разные среды)
+	if st, _, _, _ := judgeConflicts([]ctr{{Name: "web", Runtime: "podman", Owner: "root"}}); st != "" {
+		t.Error("одиночный контейнер не конфликт")
 	}
 }
