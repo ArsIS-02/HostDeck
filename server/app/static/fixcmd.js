@@ -75,11 +75,14 @@
         let m;
         if ((m = it.match(/^unit (\S+?)@(\S+) failed$/))) {
           out.push(`# сбойная пользовательская служба ${m[1]} (${m[2]}): причина и состояние\n${asUser(m[2])}systemctl --user status ${q(m[1])} --no-pager\n${asUser(m[2])}journalctl --user -u ${q(m[1])} -n 40 --no-pager`);
-          out.push(`# если служба лишняя (дубликат системной), уберите её описание Quadlet и перечитайте конфигурацию\nls ~${m[2]}/.config/containers/systemd/\n${asUser(m[2])}systemctl --user daemon-reload`);
+          out.push(`# если пишет «Unit … not found» — описания уже нет, остался след сбоя: просто сбросьте его\n${asUser(m[2])}systemctl --user reset-failed ${q(m[1])}`);
+          out.push(`# если служба нужна, но описание есть (Quadlet) — после правки перечитайте конфигурацию\nls ~${m[2]}/.config/containers/systemd/\n${asUser(m[2])}systemctl --user daemon-reload`);
         } else if ((m = it.match(/^([^:@\s]+)(?:@(\S+))?: (.+)$/))) {
           const [, name, user, why] = m;
           const base = `${asUser(user)}podman`;
           out.push(`# ${name}: ${why}\n${base} logs --tail 30 ${q(name)}` + (/exited|not started/.test(why) ? `\n${base} start ${q(name)}` : "") + (/restart/.test(why) ? `\n${base} inspect ${q(name)} --format '{{.State.Status}} {{.RestartCount}} {{.State.ExitCode}}'` : ""));
+          if (/exited|not started/.test(why)) out.push(`# если запуск падает с «address already in use» — найдите, кто держит порт, и не заменён ли контейнер другим\n${base} port ${q(name)}\nsudo ss -ltnp\n${base} ps -a --format '{{.Names}} {{.Ports}} {{.Status}}'`,
+            `# контейнер больше не нужен (заменён другим) — удалите, чтобы он не пытался стартовать после перезагрузки; образы и тома останутся\n${base} rm ${q(name)}`);
         }
       }
       if (items.some((x) => /podman-restart\.service disabled/.test(x))) out.push("# после перезагрузки контейнеры с restart=always сами не стартуют, пока служба выключена\nsudo systemctl enable --now podman-restart.service");

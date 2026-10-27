@@ -16,7 +16,7 @@ must("ssh_hardening: macOS без перезапуска", f({ id: "ssh_hardenin
 must("legacy_svc: службы из результата", f({ id: "legacy_svc", status: "warn", detail: "cups, avahi-daemon" }), /disable --now cups\.service[\s\S]*avahi-daemon\.socket/);
 must("wazuh: служба не работает", f({ id: "wazuh", status: "fail", value: "wazuh_down" }), /enable --now wazuh-agent/);
 must("containers: остановленный с always", f({ id: "containers", status: "warn", value: "ctr_warn", detail: "3/4; portainer_agent: exited(2) restart=always, podman-restart.service disabled" }), /podman logs --tail 30 portainer_agent[\s\S]*podman start portainer_agent[\s\S]*enable --now podman-restart\.service/);
-must("containers: rootless-юнит и контейнер", f({ id: "containers", status: "warn", value: "ctr_warn", detail: "2/2; unit netalertx.service@user failed, beszel@user: exited(1) restart=always" }), /sudo -u user env XDG_RUNTIME_DIR=\/run\/user\/\$\(id -u user\) systemctl --user status netalertx\.service[\s\S]*podman start beszel/);
+must("containers: rootless-юнит и контейнер", f({ id: "containers", status: "warn", value: "ctr_warn", detail: "2/2; unit netalertx.service@user failed, beszel@user: exited(1) restart=always" }), /sudo -u user env XDG_RUNTIME_DIR=\/run\/user\/\$\(id -u user\) systemctl --user status netalertx\.service[\s\S]*reset-failed netalertx\.service[\s\S]*podman start beszel[\s\S]*ss -ltnp[\s\S]*podman rm beszel/);
 const inj = f({ id: "failed_units", status: "warn", detail: "a;rm -rf /" });
 if (inj && /rm -rf \/(\s|$)/.test(inj.join("\n").replace(/'[^']*'/g, ""))) bad.push("подстановка не экранирована");
 console.log(bad.length ? "FAIL: " + bad.join("; ") : "OK: подбор команд под проблему"); process.exit(bad.length ? 1 : 0);
