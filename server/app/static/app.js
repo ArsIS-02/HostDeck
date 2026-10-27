@@ -895,7 +895,7 @@
     if (mgmtOn(h)) return null;
     return el("div", { class: "card ctr-hint ctr-hint-off" }, icon("lock", 18),
       el("div", {}, el("strong", {}, T("ctr.mgmt.off.t")), el("p", { class: "muted small" }, T("ctr.mgmt.off.d")),
-        el("pre", { class: "code" }, "sudo hostdeck-agent set -containers on\nsudo systemctl restart hostdeck-agent")));
+        el("pre", { class: "code" }, "sudo /usr/local/bin/hostdeck-agent set -containers on && sudo systemctl restart hostdeck-agent")));
   }
 
   function containersTab(h) {
