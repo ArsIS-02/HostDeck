@@ -533,9 +533,11 @@
     const nameIn = el("input", { class: "input", placeholder: T("add.name"), "aria-label": T("add.name"), maxlength: 60 });
     const termCb = checkbox({ label: T("add.terminal") });
     const updCb = checkbox({ label: T("add.autoupdate") });
+    const ctrCb = checkbox({ label: T("add.containers") });
     const body = el("div", { class: "form" }, el("label", { class: "field" }, el("span", {}, T("add.name")), nameIn),
       el("label", { class: "cb-line" }, termCb, el("span", {}, T("add.terminal"))),
-      el("label", { class: "cb-line" }, updCb, el("span", {}, T("add.autoupdate"))), el("p", { class: "muted small" }, T("add.token.hint")));
+      el("label", { class: "cb-line" }, updCb, el("span", {}, T("add.autoupdate"))),
+      el("label", { class: "cb-line" }, ctrCb, el("span", {}, T("add.containers"))), el("p", { class: "muted small" }, T("add.token.hint")));
     let created = false;
     await dialog({
       title: T("add.title"), icon: "plus", tone: "info", body, wide: true,
@@ -552,7 +554,7 @@
             const caCb = caSha ? checkbox({ label: T("add.ca"), checked: true }) : null;
             // upd=true — команда обновления уже установленного агента: без токена и имени, сразу с разрешением обновлений из веб-интерфейса
             const build = (upd = false) => {
-              const o = location.origin, tf = upd ? "HOSTDECK_AUTOUPDATE=1 " : (termCb.checked ? "HOSTDECK_TERMINAL=1 " : "") + (updCb.checked ? "HOSTDECK_AUTOUPDATE=1 " : "");
+              const o = location.origin, tf = upd ? "HOSTDECK_AUTOUPDATE=1 " : (termCb.checked ? "HOSTDECK_TERMINAL=1 " : "") + (updCb.checked ? "HOSTDECK_AUTOUPDATE=1 " : "") + (ctrCb.checked ? "HOSTDECK_CONTAINERS=1 " : "");
               const tail = upd ? "" : ` ${r.token}${name ? ` ${name}` : ""}`;
               if (caCb && caCb.checked) {
                 // CA и скрипт скачиваются без проверки канала: подлинность доказывают отпечатки из этой (авторизованной) страницы.
@@ -566,7 +568,7 @@
             const pre = el("pre", { class: "code" }, cmd);
             const upre = el("pre", { class: "code" }, build(true));
             const refresh = () => { cmd = build(); pre.textContent = cmd; upre.textContent = build(true); };
-            updCb.addEventListener("change", refresh); termCb.addEventListener("change", refresh);
+            updCb.addEventListener("change", refresh); termCb.addEventListener("change", refresh); ctrCb.addEventListener("change", refresh);
             if (caCb) caCb.addEventListener("change", refresh);
             body.replaceChildren(el("h3", { class: "small-h" }, T("add.cmd.title")), pre,
               caCb ? el("label", { class: "cb-line" }, caCb, el("span", {}, T("add.ca"))) : null, el("p", { class: "muted small" }, T("add.cmd.note")),
@@ -587,7 +589,8 @@
   // --- страница хоста -----------------------------------------------------------------------------------------------------------------
   let hostTab = "state";
   const swState = { q: "", src: "all", items: null, at: null, hostId: null };
-  const ctrState = { q: "", f: "all" };
+  const ctrState = { q: "", f: "all", sub: "list", busy: "" };
+  const imgState = { items: null, at: null, hostId: null, sel: new Set() };
 
   // --- живые приборы -----------------------------------------------------------------------------------------------------------------
   // Пока открыта вкладка «Состояние», страница раз в 3 секунды просит у сервера свежие метрики; сервер просит агента слать их чаще (режим live).
@@ -822,13 +825,88 @@
     if (c.state === "running") return c.health === "unhealthy" ? "warn" : "";
     return ctrWants(c) && (c.exit !== 0 || c.state === "created") ? "warn" : "";
   }
+  // --- управление контейнерами и образами (только admin, только если включено на хосте) ---------------------
+  function vAtLeast(v, min) {
+    const p = String(v || "").split(".").map((x) => parseInt(x, 10) || 0);
+    for (let i = 0; i < 3; i++) { if ((p[i] || 0) !== min[i]) return (p[i] || 0) > min[i]; }
+    return true;
+  }
+  const mgmtOn = (h) => !!(h.info && h.info.containers_mgmt === "on") && vAtLeast(h.agent_version, [0, 8, 0]);
+  const ctrCan = (h) => me.role === "admin" && mgmtOn(h);
+  const isSelf = (c) => c.name === "hostdeck" || /(^|\/)hostdeck(:|$)/.test(c.image || "");
+  const envKey = (x) => x.runtime + "|" + (x.owner || "");
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+  // отправляет операцию и ждёт ответа агента (до ~3 минут); возвращает результат
+  async function ctrOp(h, body) {
+    const r = await api(`/api/hosts/${h.id}/ctr/op`, { method: "POST", body });
+    const until = Date.now() + 170000;
+    while (Date.now() < until) {
+      await sleep(1000);
+      const st = await api(`/api/hosts/${h.id}/ctr/op/${r.op}`);
+      if (st.done) return st.result;
+    }
+    return { ok: false, code: "timeout", detail: "", items: [], freed: 0, state: "" };
+  }
+  // после операции агент присылает свежие данные не мгновенно: перечитываем хост и образы несколько раз
+  async function ctrReload(h) {
+    for (const wait of [2500, 5000]) {
+      await sleep(wait);
+      if (!curHost || curHost.id !== h.id) return;
+      try {
+        curHost = await api("/api/hosts/" + h.id);
+        if (imgState.hostId === h.id) { const r = await api(`/api/hosts/${h.id}/images`); imgState.items = r.items; imgState.at = r.at; imgState.sel = new Set([...imgState.sel].filter((k) => r.items.some((i) => envKey(i) + "|" + i.id === k))); }
+        if (hostTab === "containers") drawHostBody();
+      } catch (_) { /* не критично: данные обновятся при следующем отчёте */ }
+    }
+  }
+  const resText = (res, name) => {
+    const t = window.I18N.has("ctr.res." + res.code) ? T("ctr.res." + res.code) : res.code;
+    return res.code === "failed" && res.detail ? `${t}: ${res.detail}` : (res.code === "crashed" && res.detail ? `${t} (${res.detail})` : t);
+  };
+  function ctrConfirm({ title, lines, ok, tone = "danger", icon: ic = "alert" }) {
+    return dialog({ title, icon: ic, tone, body: el("div", {}, lines.filter(Boolean).map((l) => (typeof l === "string" ? el("p", {}, l) : l))),
+      buttons: [{ text: T("common.cancel"), value: false }, { text: ok, value: true, kind: tone === "danger" ? "danger" : "primary" }] }).then((r) => r === true);
+  }
+  async function ctrAction(h, c, action) {
+    if (ctrState.busy) return;
+    const self = isSelf(c);
+    const running = c.state === "running" || c.state === "restarting" || c.state === "paused";
+    const body = { action, runtime: c.runtime, owner: c.owner || "", id: c.id, name: c.name };
+    if (action === "stop" || action === "restart") {
+      if (!await ctrConfirm({ title: T(`ctr.${action}.title`, { n: c.name }), lines: [T(`ctr.${action}.body`), self ? T("ctr.self") : ""], ok: T(`ctr.${action}.ok`), tone: self ? "danger" : "info", icon: action === "stop" ? "stop" : "refresh" })) return;
+    } else if (action === "rm") {
+      if (running) body.stop_first = true;
+      if (!await ctrConfirm({ title: T("ctr.rm.title", { n: c.name }), lines: [T("ctr.rm.body"), running ? T("ctr.rm.running") : "", c.compose ? T("ctr.rm.compose", { p: c.compose }) : "", self ? T("ctr.self") : ""], ok: T("ctr.rm.ok"), icon: "trash" })) return;
+    }
+    ctrState.busy = c.name; drawHostBody();
+    try {
+      const res = await ctrOp(h, body);
+      if (res.ok) toast(T("ctr.done." + action, { n: c.name }));
+      else toast(`${c.name}: ${resText(res)}`, res.code === "already" ? "ok" : "error");
+    } catch (e) { fail(e); }
+    ctrState.busy = ""; if (curHost && curHost.id === h.id) drawHostBody();
+    ctrReload(h);
+  }
+
+  function mgmtHint(h) {
+    if (me.role !== "admin") return null;
+    if (!vAtLeast(h.agent_version, [0, 8, 0])) return el("div", { class: "card ctr-hint" }, icon("download", 18), el("span", {}, T("ctr.mgmt.old")));
+    if (mgmtOn(h)) return null;
+    return el("div", { class: "card ctr-hint ctr-hint-off" }, icon("lock", 18),
+      el("div", {}, el("strong", {}, T("ctr.mgmt.off.t")), el("p", { class: "muted small" }, T("ctr.mgmt.off.d")),
+        el("pre", { class: "code" }, "sudo hostdeck-agent set -containers on\nsudo systemctl restart hostdeck-agent")));
+  }
+
   function containersTab(h) {
     const all = h.containers || [];
+    const can = ctrCan(h);
     const envOf = (c) => c.runtime + (c.owner ? "@" + c.owner : "");
     const envsByName = {};
     for (const c of all) (envsByName[c.name] = envsByName[c.name] || new Set()).add(envOf(c));
     const body = el("div", {});
     const count = el("span", { class: "muted small" });
+    const actBtn = (c, action, ic, kind) => button("", { icon: ic, kind: kind || "ghost", title: `${T("ctr.act." + action)}: ${c.name}`, disabled: !!ctrState.busy, onclick: () => ctrAction(h, c, action) });
     const draw = () => {
       const q = ctrState.q.trim().toLowerCase();
       let rows = all.filter((c) => (ctrState.f === "all" || (ctrState.f === "running" ? c.state === "running" : ctrState.f === "stopped" ? c.state !== "running" : ctrLevel(c) !== ""))
@@ -838,20 +916,27 @@
       count.textContent = rows.length === all.length ? "" : `${rows.length} / ${all.length}`;
       if (!rows.length) { body.replaceChildren(el("div", { class: "empty" }, icon("box", 40), el("h3", {}, T("ctr.nomatch")))); return; }
       body.replaceChildren(el("div", { class: "card table-card" }, el("table", { class: "tbl" },
-        el("thead", {}, el("tr", {}, el("th", {}, T("ctr.col.name")), el("th", {}, T("ctr.col.env")), el("th", {}, T("ctr.col.state")), el("th", { class: "hide-m" }, T("ctr.col.restart")), el("th", { class: "hide-m" }, T("ctr.col.ports")), el("th", { class: "hide-m" }, T("ctr.col.up")))),
+        el("thead", {}, el("tr", {}, el("th", {}, T("ctr.col.name")), el("th", {}, T("ctr.col.env")), el("th", {}, T("ctr.col.state")), el("th", { class: "hide-m" }, T("ctr.col.restart")), el("th", { class: "hide-m" }, T("ctr.col.ports")), el("th", { class: "hide-m" }, T("ctr.col.up")), can ? el("th", { class: "ctr-act-h" }, T("ctr.col.act")) : null)),
         el("tbody", {}, rows.map((c) => {
           const lv = ctrLevel(c);
           const stTone = c.state === "running" ? (c.health === "unhealthy" ? "c-warn" : "c-ok") : c.state === "restarting" ? "c-fail" : lv === "warn" ? "c-warn" : "c-off";
           const stText = T("ctr.st." + c.state) !== "ctr.st." + c.state ? T("ctr.st." + c.state) : c.state;
-          return el("tr", { class: lv ? "ctr-bad" + (lv === "red" ? " ctr-red" : "") : "" },
+          const up = c.state === "running" || c.state === "restarting" || c.state === "paused";
+          const mine = ctrState.busy === c.name;
+          return el("tr", { class: (lv ? "ctr-bad" + (lv === "red" ? " ctr-red" : "") : "") + (mine ? " ctr-working" : "") },
             el("td", {}, el("span", { class: "ctr-name" }, c.name), c.image ? el("span", { class: "ctr-img" }, c.image) : null,
+              c.unit ? el("span", { class: "ctr-img" }, T("ctr.unit", { u: c.unit })) : (c.compose ? el("span", { class: "ctr-img" }, T("ctr.compose", { p: c.compose })) : null),
               envsByName[c.name].size > 1 ? chip("alert", T("ctr.dup"), "c-warn") : null),
             el("td", {}, chip(c.runtime === "docker" ? "server" : "box", T("ctr.rt." + c.runtime) + (c.owner ? " · " + c.owner : (c.runtime === "podman" ? " · root" : "")), "")),
             el("td", {}, chip(null, stText + (c.state !== "running" && c.state !== "created" && c.exit ? ` · ${T("ctr.exit", { n: c.exit })}` : ""), stTone),
               c.health === "unhealthy" ? el("span", { class: "muted small" }, " " + T("ctr.unhealthy")) : null),
             el("td", { class: "hide-m muted small" }, c.restart && c.restart !== "no" ? c.restart : "—"),
             el("td", { class: "hide-m" }, c.ports && c.ports.length ? el("div", { class: "ctr-ports" }, c.ports.map((p) => el("div", {}, p))) : el("span", { class: "muted" }, "—")),
-            el("td", { class: "hide-m muted small" }, c.started ? ago(c.started) : "—"));
+            el("td", { class: "hide-m muted small" }, c.started ? ago(c.started) : "—"),
+            can ? el("td", { class: "ctr-act" }, mine ? el("span", { class: "muted small ctr-busy" }, T("ctr.busy", { a: c.name })) : (c.id ? [
+              up ? actBtn(c, "stop", "stop") : actBtn(c, "start", "play"),
+              up ? actBtn(c, "restart", "refresh") : null,
+              c.unit ? null : actBtn(c, "rm", "trash", "danger-ghost")] : null)) : null);
         })))));
     };
     const search = el("input", { class: "input", type: "search", placeholder: T("ctr.search"), "aria-label": T("ctr.search"), value: ctrState.q });
@@ -859,6 +944,12 @@
     const filters = ["all", "running", "stopped", "problem"].map((f) => ({ value: f, label: T("ctr.f." + f) }));
     const bad = all.filter((c) => ctrLevel(c) !== "").length, run = all.filter((c) => c.state === "running").length;
     const wrap = el("div", {});
+    const hint = mgmtHint(h);
+    const subs = mgmtOn(h) ? segmented([{ value: "list", text: T("ctr.sub.list"), icon: "box" }, { value: "img", text: T("ctr.sub.img"), icon: "disk" }], ctrState.sub,
+      async (v) => { ctrState.sub = v; if (v === "img" && imgState.hostId !== h.id) { imgState.items = null; drawHostBody(); await loadImages(h); } drawHostBody(); }, T("host.tab.containers")) : null;
+    if (subs) wrap.append(el("div", { class: "ctr-subs" }, subs));
+    if (subs && ctrState.sub === "img") { wrap.append(imagesTab(h)); return wrap; }
+    if (hint) wrap.append(hint);
     if (!all.length) {
       wrap.append(el("div", { class: "empty" }, icon("box", 40), el("h3", {}, T("ctr.none")), el("p", { class: "muted" }, T("ctr.none.d"))));
       return wrap;
@@ -870,6 +961,75 @@
         select(filters, ctrState.f, (v) => { ctrState.f = v; draw(); }, { icon: "sliders", label: T("ctr.filter") }), count),
       body);
     draw();
+    return wrap;
+  }
+
+  // --- образы ------------------------------------------------------------------------------------------------------
+  async function loadImages(h) {
+    try {
+      const r = await api(`/api/hosts/${h.id}/images`);
+      imgState.items = r.items; imgState.at = r.at; imgState.hostId = h.id; imgState.sel = new Set();
+    } catch (e) { fail(e); imgState.items = []; imgState.hostId = h.id; }
+  }
+  const imgKey = (i) => envKey(i) + "|" + i.id;
+  // удаляет образы по средам (за один вызов агента — одна среда); возвращает общий итог
+  async function imgRemove(h, list) {
+    if (ctrState.busy) return;
+    ctrState.busy = "img"; drawHostBody();
+    const groups = {};
+    for (const i of list) (groups[envKey(i)] = groups[envKey(i)] || []).push(i);
+    let removed = 0, freed = 0; const failed = [];
+    try {
+      for (const g of Object.values(groups)) {
+        const res = await ctrOp(h, { action: "img_rm", runtime: g[0].runtime, owner: g[0].owner || "", images: g.map((i) => i.id) });
+        freed += res.freed || 0;
+        if (res.items && res.items.length) {
+          for (const it of res.items) { if (it.ok) removed++; else failed.push(`${it.target}: ${resText(it)}`); }
+        } else if (res.ok) removed += g.length;
+        else failed.push(resText(res));
+      }
+      if (removed) toast(T("img.done", { n: removed, s: fmtBytes(freed) }) + (failed.length ? ` · ${T("img.kept", { n: failed.length })}` : ""));
+      else if (failed.length) toast(failed[0], "error");
+      if (failed.length && removed) await dialog({ title: T("img.fail.title"), icon: "alert", tone: "warn", body: el("div", {}, failed.slice(0, 20).map((f) => el("p", { class: "small" }, f))), buttons: [{ text: T("common.close"), value: true, kind: "primary" }] });
+    } catch (e) { fail(e); }
+    ctrState.busy = ""; imgState.sel = new Set(); if (curHost && curHost.id === h.id) drawHostBody();
+    ctrReload(h);
+  }
+  async function imgConfirmRemove(h, list) {
+    if (!list.length) { toast(T("img.nothing")); return; }
+    const total = list.reduce((a, i) => a + (i.size || 0), 0);
+    const shown = list.slice(0, 12).map((i) => el("li", {}, el("span", { class: "ctr-img" }, (i.names[0] || T("img.unnamed")) + " · " + i.id), " ", el("span", { class: "muted small" }, fmtBytes(i.size))));
+    const body = [T("img.rm.body", { s: fmtBytes(total) }), el("ul", { class: "img-list" }, shown, list.length > 12 ? el("li", { class: "muted" }, T("img.more", { n: list.length - 12 })) : null)];
+    if (await ctrConfirm({ title: T("img.rm.title", { n: list.length }), lines: body, ok: T("ctr.rm.ok"), icon: "trash" })) imgRemove(h, list);
+  }
+  function imagesTab(h) {
+    const items = imgState.items;
+    const wrap = el("div", {});
+    if (items == null) { wrap.append(el("div", { class: "empty" }, icon("disk", 40), el("p", { class: "muted" }, "…"))); return wrap; }
+    const can = ctrCan(h);
+    const unused = items.filter((i) => !i.used_by.length), dangling = unused.filter((i) => !i.names.length);
+    const total = items.reduce((a, i) => a + (i.size || 0), 0), free = unused.reduce((a, i) => a + (i.size || 0), 0);
+    const selected = items.filter((i) => imgState.sel.has(imgKey(i)));
+    const busy = !!ctrState.busy;
+    wrap.append(el("div", { class: "ctr-sum" }, chip("disk", T("img.sum", { n: items.length, s: fmtBytes(total) }), ""), free ? chip("check", T("img.reclaim", { s: fmtBytes(free) }), "c-ok") : null,
+      el("span", { class: "spacer" }), el("span", { class: "muted small" }, imgState.at ? T("img.updated", { t: ago(imgState.at) }) : "")));
+    wrap.append(el("div", { class: "toolbar" },
+      me.role !== "viewer" ? button(T("img.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${h.id}/images/refresh`, { method: "POST", body: {} }); toast(T("img.refresh.queued")); setTimeout(async () => { if (curHost && curHost.id === h.id) { await loadImages(h); if (hostTab === "containers") drawHostBody(); } }, 3500); } catch (e) { fail(e); } } }) : null,
+      el("span", { class: "spacer" }),
+      can ? [button(T("img.rm.sel", { n: selected.length }), { icon: "trash", kind: "danger-ghost", disabled: busy || !selected.length, onclick: () => imgConfirmRemove(h, selected) }),
+        button(T("img.clean.dangling"), { disabled: busy || !dangling.length, onclick: () => imgConfirmRemove(h, dangling) }),
+        button(T("img.clean.unused"), { disabled: busy || !unused.length, onclick: () => imgConfirmRemove(h, unused) })] : null));
+    if (!items.length) { wrap.append(el("div", { class: "empty" }, icon("disk", 40), el("h3", {}, T("img.none")), el("p", { class: "muted" }, T("img.none.d")))); return wrap; }
+    const rows = [...items].sort((a, b) => (a.used_by.length ? 1 : 0) - (b.used_by.length ? 1 : 0) || (b.size || 0) - (a.size || 0));
+    wrap.append(el("div", { class: "card table-card" }, el("table", { class: "tbl" },
+      el("thead", {}, el("tr", {}, can ? el("th", { class: "cb-col" }, "") : null, el("th", {}, T("img.col.name")), el("th", {}, T("ctr.col.env")), el("th", { class: "num" }, T("img.col.size")), el("th", { class: "hide-m" }, T("img.col.created")), el("th", {}, T("img.col.used")))),
+      el("tbody", {}, rows.map((i) => el("tr", {},
+        can ? el("td", { class: "cb-col" }, i.used_by.length ? null : checkbox({ label: i.id, checked: imgState.sel.has(imgKey(i)), onchange: (v) => { v ? imgState.sel.add(imgKey(i)) : imgState.sel.delete(imgKey(i)); drawHostBody(); } })) : null,
+        el("td", {}, i.names.length ? i.names.map((n) => el("span", { class: "ctr-name img-name" }, n)) : el("span", { class: "ctr-name muted" }, T("img.unnamed")), el("span", { class: "ctr-img" }, i.id)),
+        el("td", {}, chip(i.runtime === "docker" ? "server" : "box", T("ctr.rt." + i.runtime) + (i.owner ? " · " + i.owner : (i.runtime === "podman" ? " · root" : "")), "")),
+        el("td", { class: "num" }, fmtBytes(i.size || 0)),
+        el("td", { class: "hide-m muted small" }, i.created ? fmtDate(i.created) : "—"),
+        el("td", {}, i.used_by.length ? el("span", { class: "small" }, i.used_by.join(", ")) : chip(null, T("img.unused"), "c-off"))))))));
     return wrap;
   }
 
@@ -896,7 +1056,7 @@
     (async () => {
       try {
         const h = await api("/api/hosts/" + id);
-        curHost = h;
+        curHost = h; ctrState.sub = "list"; ctrState.busy = "";
         const x = h.info || {};
         document.title = h.name + " — HostDeck";
         head.replaceChildren(...[
@@ -1070,6 +1230,8 @@
     "enroll-rejected": { ic: "x", tone: "fail", cat: "hosts" }, "enrolled": { ic: "check", tone: "ok", cat: "hosts" },
     "admin-created": { ic: "key", tone: "info", cat: "access" },
     "agent-update": { ic: "download", tone: "info", cat: "hosts" }, "agent-updated": { ic: "check", tone: "ok", cat: "hosts" },
+    "ctr-start": { ic: "play", tone: "ok", cat: "containers" }, "ctr-stop": { ic: "stop", tone: "warn", cat: "containers" }, "ctr-restart": { ic: "refresh", tone: "info", cat: "containers" },
+    "ctr-rm": { ic: "trash", tone: "fail", cat: "containers" }, "ctr-op": { ic: "box", tone: "", cat: "containers" }, "img-rm": { ic: "trash", tone: "fail", cat: "containers" },
     "agent-update-failed": { ic: "x", tone: "fail", cat: "hosts" }, "agent-update-current": { ic: "check", tone: "", cat: "hosts" },
   };
   function fmtDur(sec) {
@@ -1080,7 +1242,8 @@
   function fmtBytes(n) {
     if (n < 1024) return `${n} ${T("u.b")}`;
     if (n < 1048576) return `${(n / 1024).toFixed(1)} ${T("u.kb")}`;
-    return `${(n / 1048576).toFixed(1)} ${T("u.mb")}`;
+    if (n < 1073741824) return `${(n / 1048576).toFixed(1)} ${T("u.mb")}`;
+    return `${(n / 1073741824).toFixed(2)} ${T("u.gb")}`;
   }
   function auditActor(r) { return r.actor === "agent" ? T("audit.actor.agent") : r.actor === "system" ? T("audit.actor.system") : r.actor || "—"; }
   function auditDetail(r) {
@@ -1093,6 +1256,11 @@
         const m = d.match(/^(\d+) с, ввод (\d+) Б, вывод (\d+) Б(?:, ошибка: (.*))?$/);
         if (!m) return d;
         return T("audit.d.session", { t: fmtDur(+m[1]), i: fmtBytes(+m[2]), o: fmtBytes(+m[3]) }) + (m[4] ? ", " + T("audit.d.error", { e: m[4] }) : "");
+      }
+      case "ctr-start": case "ctr-stop": case "ctr-restart": case "ctr-rm": case "ctr-op": case "img-rm": {
+        const m = d.match(/^(.*): (\w+)(?: \((.*)\))?$/);
+        if (!m) return d;
+        return `${m[1]} — ${window.I18N.has("ctr.res." + m[2]) ? T("ctr.res." + m[2]) : m[2]}${m[3] ? " (" + m[3] + ")" : ""}`;
       }
       case "enrolled": return "";
       case "admin-created": return d ? T("audit.d.name", { n: d }) : "";
@@ -1143,7 +1311,7 @@
     search.addEventListener("input", () => { st.q = search.value; draw(); });
     const page = el("main", { class: "page" }, el("div", { class: "page-head" }, el("h1", {}, T("audit.title"))), el("p", { class: "muted" }, T("audit.sub")),
       el("div", { class: "toolbar" }, el("div", { class: "search-wrap" }, icon("search", 16), search),
-        select(["all", "access", "hosts", "console", "requests"].map((k) => ({ value: k, label: T("audit.cat." + k) })), st.cat, (v) => { st.cat = v; draw(); }, { icon: "sliders", label: T("audit.cat.all") })),
+        select(["all", "access", "hosts", "console", "containers", "requests"].map((k) => ({ value: k, label: T("audit.cat." + k) })), st.cat, (v) => { st.cat = v; draw(); }, { icon: "sliders", label: T("audit.cat.all") })),
       list);
     load();
     return page;

@@ -83,5 +83,29 @@ import re as _re
 agent_v = _re.search(r'var version = "([^"]+)"', open(os.path.join(ROOT, "agent", "collect.go"), encoding="utf-8").read()).group(1)
 ok(m.APP_VERSION == agent_v, "версия сервера (%s) совпадает с версией агента (%s)" % (m.APP_VERSION, agent_v))
 
+# управление контейнерами: очистка данных, учёт операций, тайм-аут
+cc = m.clean_containers([{"name": "web", "id": "ab" * 6, "image_id": "cd" * 6, "unit": "web.service", "compose": "proj", "runtime": "podman", "x": 1}])
+ok(cc[0]["id"] == "ab" * 6 and cc[0]["unit"] == "web.service" and cc[0]["compose"] == "proj" and "x" not in cc[0], "операции: в списке контейнеров сохранены id, юнит и проект")
+im = m.clean_images([{"runtime": "podman", "id": "a" * 12, "full_id": "a" * 64, "names": ["x"] * 30, "size": 5, "created": 1, "used_by": ["c"]},
+                     {"runtime": "podman", "id": "zz", "full_id": "-rf"}, "мусор", {"id": 5}])
+ok(len(im) == 1 and len(im[0]["names"]) == 20 and im[0]["used_by"] == ["c"], "операции: образы очищены от мусора и ограничены по длине")
+m.OPS.clear()
+m.OPS["o1"] = {"host": "h1", "actor": "admin", "action": "rm", "target": "web", "created": time.time(), "result": None}
+m.finish_op("h2", {"op": "o1", "ok": True, "code": "ok"})
+ok(m.OPS["o1"]["result"] is None, "операции: ответ от чужого хоста игнорируется")
+m.finish_op("h1", {"op": "o1", "ok": True, "code": "взлом", "detail": "x" * 999, "items": [{"target": "t", "ok": 1, "code": "in_use"}, "мусор"]})
+r1 = m.OPS["o1"]["result"]
+ok(r1["code"] == "failed" and len(r1["detail"]) == 300 and r1["items"] == [{"target": "t", "ok": True, "code": "in_use", "detail": ""}], "операции: неизвестный код заменён на failed, ответ очищен")
+m.finish_op("h1", {"op": "o1", "ok": True, "code": "ok"})
+ok(m.OPS["o1"]["result"] is r1, "операции: повторный ответ не меняет итог")
+ok(db.q1("SELECT action, actor FROM audit WHERE action='ctr-rm'") is not None, "операции: итог записан в журнал")
+m.OPS["o2"] = {"host": "h1", "actor": "admin", "action": "start", "target": "web", "created": time.time() - m.OP_TIMEOUT - 1, "result": None}
+ok(m.pending_op("h1") is not None, "операции: незавершённая операция видна")
+m.expire_ops(time.time())
+ok(m.OPS["o2"]["result"]["code"] == "timeout" and m.pending_op("h1") is None, "операции: без ответа агента по тайм-ауту завершается с кодом timeout")
+m.OPS["o3"] = {"host": "h1", "actor": "admin", "action": "start", "target": "web", "created": time.time() - m.OP_TTL - 1, "result": {"ok": True}}
+m.expire_ops(time.time())
+ok("o3" not in m.OPS, "операции: старые записи удаляются")
+
 print("\nИТОГО: %d/%d" % (sum(res), len(res)))
 sys.exit(0 if all(res) else 1)

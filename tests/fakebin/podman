@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Поддельный podman для сквозного теста: состояние в JSON-файле FAKE_PODMAN_STATE, команды те же, что использует агент."""
+import json, os, sys, time
+
+ST = os.environ.get("FAKE_PODMAN_STATE", "/tmp/fake-podman.json")
+H = lambda c: c * 64
+
+
+def load():
+    if not os.path.exists(ST):
+        s = {"ctrs": [
+            {"id": H("1"), "name": "web", "status": "exited", "exit": 0, "image": H("b"), "policy": "always", "unit": "", "started": 0},
+            {"id": H("2"), "name": "live", "status": "running", "exit": 0, "image": H("a"), "policy": "no", "unit": "", "started": int(time.time()) - 600},
+            {"id": H("3"), "name": "svc", "status": "running", "exit": 0, "image": H("a"), "policy": "always", "unit": "svc.service", "started": int(time.time()) - 600}],
+            "images": [{"id": H("a"), "names": ["localhost/app:1", "localhost/app:latest"], "size": 1000},
+                       {"id": H("b"), "names": ["docker.io/library/caddy:2"], "size": 500},
+                       {"id": H("c"), "names": [], "size": 300}]}
+        save(s)
+        return s
+    return json.load(open(ST))
+
+
+def save(s):
+    json.dump(s, open(ST, "w"))
+
+
+def ctr(s, ref):
+    for c in s["ctrs"]:
+        if ref in (c["name"], c["id"]) or c["id"].startswith(ref):
+            return c
+
+
+def img(s, ref):
+    ref = ref.replace("sha256:", "")
+    for i in s["images"]:
+        if i["id"].startswith(ref) or ref in i["names"]:
+            return i
+
+
+def iso(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t)) if t else "0001-01-01T00:00:00Z"
+
+
+a = sys.argv[1:]
+s = load()
+if not a:
+    sys.exit(0)
+if a[0] == "ps":
+    print("\n".join(c["id"][:12] for c in s["ctrs"]))
+elif a[0] == "inspect":
+    out = []
+    for ref in a[1:]:
+        c = ctr(s, ref)
+        if not c:
+            print("Error: no such object", file=sys.stderr); sys.exit(125)
+        out.append({"Id": c["id"], "Name": "/" + c["name"], "Image": c["image"], "ImageName": "img", "RestartCount": 0,
+                    "State": {"Status": c["status"], "ExitCode": c["exit"], "StartedAt": iso(c["started"])},
+                    "HostConfig": {"RestartPolicy": {"Name": c["policy"]}, "PortBindings": {}},
+                    "Config": {"Image": "img", "Labels": ({"PODMAN_SYSTEMD_UNIT": c["unit"]} if c["unit"] else {})}})
+    print(json.dumps(out))
+elif a[0] == "start":
+    c = ctr(s, a[-1]); c["status"] = "running"; c["started"] = int(time.time()); save(s)
+elif a[0] == "stop":
+    c = ctr(s, a[-1]); c["status"] = "exited"; save(s)
+elif a[0] == "restart":
+    c = ctr(s, a[-1]); c["status"] = "running"; c["started"] = int(time.time()) + 2; save(s)
+elif a[0] == "rm":
+    c = ctr(s, a[-1])
+    if not c: print("no such container", file=sys.stderr); sys.exit(1)
+    if c["status"] == "running": print("cannot remove a running container", file=sys.stderr); sys.exit(2)
+    s["ctrs"].remove(c); save(s)
+elif a[0] == "images":
+    for i in s["images"]:
+        for _ in (i["names"] or [None]):
+            print("sha256:" + i["id"])
+elif a[0] == "image" and a[1] == "inspect":
+    out = []
+    for ref in a[2:]:
+        i = img(s, ref)
+        if not i: print("no such image", file=sys.stderr); sys.exit(125)
+        out.append({"Id": "sha256:" + i["id"], "RepoTags": i["names"], "Size": i["size"], "Created": "2026-10-01T00:00:00Z"})
+    print(json.dumps(out))
+elif a[0] == "rmi":
+    ref = a[-1]; i = img(s, ref)
+    if not i: print("no such image", file=sys.stderr); sys.exit(1)
+    if any(c["image"] == i["id"] for c in s["ctrs"]): print("image is in use", file=sys.stderr); sys.exit(2)
+    if len(i["names"]) > 1 and ref in i["names"]:
+        i["names"].remove(ref)
+    elif len(i["names"]) > 1:
+        print("image has multiple tags", file=sys.stderr); sys.exit(2)
+    else:
+        s["images"].remove(i)
+    save(s)
+else:
+    print("unsupported", a, file=sys.stderr); sys.exit(125)

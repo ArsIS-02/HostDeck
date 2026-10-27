@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Поддельный systemctl для сквозного теста: start/stop/restart юнита контейнера меняют состояние поддельного podman, остальное уходит настоящему systemctl."""
+import json, os, shutil, sys, time
+
+ST = os.environ.get("FAKE_PODMAN_STATE", "/tmp/fake-podman.json")
+a = sys.argv[1:]
+args = [x for x in a if x != "--user"]
+if len(args) == 2 and args[0] in ("start", "stop", "restart") and args[1].endswith(".service") and os.path.exists(ST):
+    s = json.load(open(ST))
+    for c in s["ctrs"]:
+        if c["unit"] == args[1]:
+            if args[0] == "stop":
+                c["status"] = "exited"
+            else:
+                c["status"] = "running"; c["started"] = int(time.time()) + 2
+                if args[0] == "restart":
+                    c["id"] = "9" * 64   # Quadlet пересоздаёт контейнер
+            json.dump(s, open(ST, "w"))
+            sys.exit(0)
+    print("Unit " + args[1] + " not found.", file=sys.stderr); sys.exit(5)
+me = os.path.dirname(os.path.abspath(__file__))
+path = os.pathsep.join(p for p in os.environ.get("PATH", "").split(os.pathsep) if os.path.abspath(p) != me)
+real = shutil.which("systemctl", path=path)
+if real:
+    os.execv(real, [real] + a)
+sys.exit(1)

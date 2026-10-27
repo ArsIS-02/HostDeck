@@ -17,6 +17,8 @@ type Config struct {
 	IntervalMin int    `json:"interval_min,omitempty"`
 	// AllowTerminal разрешает администратору открывать root-консоль из веб-интерфейса. По умолчанию выключено.
 	AllowTerminal bool `json:"allow_terminal,omitempty"`
+	// AllowContainers разрешает администратору запускать, останавливать и удалять контейнеры и образы. По умолчанию выключено.
+	AllowContainers bool `json:"allow_containers,omitempty"`
 	// AllowUpdate разрешает серверу обновлять агента по команде из веб-интерфейса. По умолчанию выключено.
 	AllowUpdate bool `json:"allow_update,omitempty"`
 	// UpdateKey — закреплённый открытый ключ подписи обновлений (Ed25519, base64). Сервер сменить его не может.
