@@ -28,7 +28,7 @@ try:
     with sync_playwright() as p:
         br = p.chromium.launch()
         for scheme in ("light", "dark"):
-            ctx = br.new_context(viewport={"width": 1280, "height": 860}, color_scheme=scheme, accept_downloads=True, locale="ru-RU")
+            ctx = br.new_context(viewport={"width": 1280, "height": 860}, color_scheme=scheme, accept_downloads=True, locale="ru-RU", permissions=["clipboard-read", "clipboard-write"])
             pg = ctx.new_page()
             pg.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             pg.on("pageerror", lambda e: errors.append(str(e)))
@@ -123,6 +123,19 @@ try:
                 pg.screenshot(path=f"{OUT}/tooltip-en-dark.png")
                 pg.mouse.move(5, 5); pg.wait_for_selector(".tip", state="detached")
                 ok(True, "подсказка скрывается при уходе курсора")
+                # закрепление: нажатие внутри подсказки не даёт ей исчезнуть, команду можно скопировать
+                pg.hover(".check:has-text('Stealth mode') .badge"); pg.wait_for_selector(".tip.on")
+                pg.click(".tip pre >> nth=0")
+                pg.mouse.move(5, 5); pg.wait_for_timeout(700)
+                ok(pg.locator(".tip.pinned").count() == 1, "закреплённая подсказка не исчезает при уходе курсора")
+                pg.click(".tip .cmd-copy >> nth=0")
+                pg.wait_for_selector(".toast >> text=Copied", timeout=5000)
+                ok(True, "кнопка «Копировать» у команды работает")
+                pg.keyboard.press("Escape"); pg.wait_for_selector(".tip", state="detached")
+                ok(True, "закреплённая подсказка закрывается по Esc")
+                pg.hover(".check:has-text('Stealth mode') .badge"); pg.wait_for_selector(".tip.on")
+                pg.click(".tip .tip-x"); pg.wait_for_selector(".tip", state="detached")
+                ok(True, "подсказка закрывается крестиком")
                 pg.focus(".check.s-ok .badge"); pg.wait_for_selector(".tip.on")
                 ok("nothing to change" in pg.inner_text(".tip"), "подсказка по клавиатуре (фокус), для «в порядке» — без лишних шагов")
                 pg.keyboard.press("Escape"); pg.wait_for_selector(".tip", state="detached")

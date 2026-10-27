@@ -276,3 +276,8 @@ tr.off { opacity: .7; } .c-cb { width: 44px; } .cell-host { display: flex; align
 a.host-chip { text-decoration: none; color: var(--accent, #0a84ff); } a.host-chip:hover { text-decoration: underline; }
 
 @media (max-width: 520px) { .nav { gap: 2px; } .nav-item { padding: 7px 9px; gap: 0; font-size: 14px; } .nav-item .ico, .nav-item svg { display: none; } }
+
+.tip { padding-right: 34px; } .tip .tip-x { position: absolute; top: 6px; right: 8px; width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; } .tip .tip-x:hover { background: var(--seg); color: var(--text); }
+.tip.pinned { box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow, 0 10px 30px #0003); }
+.tip .cmd-wrap { position: relative; } .tip .cmd-wrap pre { padding-right: 96px; } .tip .cmd-copy { position: absolute; top: 8px; right: 6px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--line2); border-radius: 999px; background: var(--card); color: var(--muted); font-size: 12px; cursor: pointer; } .tip .cmd-copy:hover { color: var(--text); background: var(--seg); }
+.copy-tmp { position: fixed; left: -9999px; top: 0; opacity: 0; }

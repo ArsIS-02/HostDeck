@@ -1,6 +1,6 @@
 // Справка: что означает каждая проверка, чем опасно отклонение и как его исправить; инструкция администратора.
 // Тексты лежат отдельно от интерфейса, чтобы их было удобно править. Команды выполняются на самом хосте с правами администратора
-// (их можно вставить в «Консоль» карточки хоста, если на нём разрешена консоль).
+// (их можно вставить во вкладку «Терминал» карточки хоста, если на нём разрешена консоль).
 (() => {
   "use strict";
   const FW = "/usr/libexec/ApplicationFirewall/socketfilterfw";
@@ -437,7 +437,7 @@
     },
     unknown: "Данные не получены: команда проверки завершилась ошибкой или параметр не задан. Причина показана в карточке ниже названия. Обычно помогает кнопка «Обновить» в шапке хоста. Если ошибка повторяется, проверьте журнал агента: /var/log/hostdeck-agent.log.",
     ui: { what: "Что это", risk: "Почему это важно", fix: "Как исправить", cmd: "Команда (на хосте, от администратора)", cmd_for: "для вашего случая", unknown: "Почему нет данных", now: "Сейчас",
-          run: "Команды можно выполнить в «Консоли» карточки хоста, если на нём разрешена консоль.", ok: "Всё в порядке, менять ничего не нужно.", info: "Справочная информация.",
+          run: "Команды можно выполнить на вкладке «Терминал» карточки хоста, если на нём разрешена консоль.", ok: "Всё в порядке, менять ничего не нужно.", info: "Справочная информация.",
           hint: "Подсказка", close: "Закрыть" },
     guide: {
       title: "Инструкция администратора",
@@ -448,7 +448,7 @@
           "Скопируйте команду и выполните её на хосте в терминале (спросит пароль sudo этого хоста). Хост скачает установщик и агента с этого сервера, проверит контрольные суммы и зарегистрируется.",
           "Если сервер подписан внутренним CA, оставьте включённым флажок про CA: сертификат скачивается и сверяется по отпечатку из этой страницы. В системное хранилище он не добавляется.",
           "Через минуту хост появится в списке. Пока в списке нет — смотрите «Если хост не появился»."] },
-        { h: "Консоль с правами root", p: ["Консоль открывается кнопкой «Консоль» в карточке хоста. Она включена только при двойном разрешении: вы вошли как администратор и агент на хосте установлен с разрешением консоли (HOSTDECK_TERMINAL=1 в команде, флажок в окне добавления).",
+        { h: "Консоль с правами root", p: ["Консоль открывается на вкладке «Терминал» в карточке хоста. Она включена только при двойном разрешении: вы вошли как администратор и агент на хосте установлен с разрешением консоли (HOSTDECK_TERMINAL=1 в команде, флажок в окне добавления).",
           "Оболочка работает от root. Сессия закрывается после 15 минут простоя, на хост допускается не больше двух. В журнал пишутся открытие, закрытие и отказы; сами команды не записываются, потому что в них бывают пароли.",
           "Чтобы выключить консоль на хосте, переустановите агента командой без флага или поправьте allow_terminal в его конфиге."] },
         { h: "Что показывает карточка", ul: ["Приборы: процессор, память, диск, нагрузка (или батарея у ноутбука) и своп. Обновляются раз в минуту; если данные устарели, это видно по значку часов.",
@@ -899,7 +899,7 @@
     },
     unknown: "No data: the check command failed or the setting is not defined. The reason is shown on the card under the title. The Refresh button in the host header usually helps. If it keeps failing, look at the agent log: /var/log/hostdeck-agent.log.",
     ui: { what: "What it is", risk: "Why it matters", fix: "How to fix", cmd: "Command (on the host, as administrator)", cmd_for: "for your case", unknown: "Why there is no data", now: "Now",
-          run: "You can run the commands in the host's Console, if the console is enabled there.", ok: "All good, nothing to change.", info: "For information.",
+          run: "You can run the commands on the host card's Terminal tab, if the console is enabled there.", ok: "All good, nothing to change.", info: "For information.",
           hint: "Hint", close: "Close" },
     guide: {
       title: "Administrator guide",
@@ -910,7 +910,7 @@
           "Copy the command and run it in a terminal on the host (it will ask for that host's sudo password). The host downloads the installer and the agent from this server, verifies the checksums and enrolls.",
           "If the server uses an internal CA, keep the CA box ticked: the certificate is downloaded and checked against the fingerprint from this page. It is not added to the system trust store.",
           "The host shows up in the list within a minute. If it does not, see “If a host does not appear”."] },
-        { h: "Root console", p: ["The console opens with the Console button on the host's card. It needs two permissions: you are signed in as an administrator, and the agent was installed with the console allowed (HOSTDECK_TERMINAL=1 in the command, the box in the Add dialog).",
+        { h: "Root console", p: ["The console opens on the Terminal tab of the host's card. It needs two permissions: you are signed in as an administrator, and the agent was installed with the console allowed (HOSTDECK_TERMINAL=1 in the command, the box in the Add dialog).",
           "The shell runs as root. A session closes after 15 minutes idle, and at most two are allowed per host. The audit log records open, close and denied attempts; the commands themselves are not recorded, as they may contain passwords.",
           "To disable the console on a host, reinstall the agent with the command without the flag or change allow_terminal in its config."] },
         { h: "What the card shows", ul: ["Gauges: CPU, memory, disk, load (or battery on a laptop) and swap. Refreshed every minute; stale data is marked with a clock.",
