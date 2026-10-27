@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var version = "0.6.2"
+var version = "0.6.3"
 
 // Posture — снимок состояния хоста, который уходит на сервер.
 type Posture struct {
