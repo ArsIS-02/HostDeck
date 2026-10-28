@@ -226,6 +226,7 @@
         nav("#/", "nav.home", "home", route.name === "home"),
         nav("#/hosts", "nav.hosts", "grid", route.name === "hosts" || route.name === "host"),
         nav("#/apps", "nav.apps", "apps", route.name === "apps"),
+        nav("#/network", "nav.network", "network", route.name === "network"),
         nav("#/report", "nav.report", "shield", route.name === "report"),
         me && me.role === "admin" ? nav("#/audit", "nav.audit", "book", route.name === "audit") : null),
       el("span", { class: "spacer" }),
@@ -534,10 +535,12 @@
     const termCb = checkbox({ label: T("add.terminal") });
     const updCb = checkbox({ label: T("add.autoupdate") });
     const ctrCb = checkbox({ label: T("add.containers") });
+    const netCb = checkbox({ label: T("add.network") });
     const body = el("div", { class: "form" }, el("label", { class: "field" }, el("span", {}, T("add.name")), nameIn),
       el("label", { class: "cb-line" }, termCb, el("span", {}, T("add.terminal"))),
       el("label", { class: "cb-line" }, updCb, el("span", {}, T("add.autoupdate"))),
-      el("label", { class: "cb-line" }, ctrCb, el("span", {}, T("add.containers"))), el("p", { class: "muted small" }, T("add.token.hint")));
+      el("label", { class: "cb-line" }, ctrCb, el("span", {}, T("add.containers"))),
+      el("label", { class: "cb-line" }, netCb, el("span", {}, T("add.network"))), el("p", { class: "muted small" }, T("add.token.hint")));
     let created = false;
     await dialog({
       title: T("add.title"), icon: "plus", tone: "info", body, wide: true,
@@ -554,7 +557,7 @@
             const caCb = caSha ? checkbox({ label: T("add.ca"), checked: true }) : null;
             // upd=true — команда обновления уже установленного агента: без токена и имени, сразу с разрешением обновлений из веб-интерфейса
             const build = (upd = false) => {
-              const o = location.origin, tf = upd ? "HOSTDECK_AUTOUPDATE=1 " : (termCb.checked ? "HOSTDECK_TERMINAL=1 " : "") + (updCb.checked ? "HOSTDECK_AUTOUPDATE=1 " : "") + (ctrCb.checked ? "HOSTDECK_CONTAINERS=1 " : "");
+              const o = location.origin, tf = upd ? "HOSTDECK_AUTOUPDATE=1 " : (termCb.checked ? "HOSTDECK_TERMINAL=1 " : "") + (updCb.checked ? "HOSTDECK_AUTOUPDATE=1 " : "") + (ctrCb.checked ? "HOSTDECK_CONTAINERS=1 " : "") + (netCb.checked ? "HOSTDECK_NETWORK=1 " : "");
               const tail = upd ? "" : ` ${r.token}${name ? ` ${name}` : ""}`;
               if (caCb && caCb.checked) {
                 // CA и скрипт скачиваются без проверки канала: подлинность доказывают отпечатки из этой (авторизованной) страницы.
@@ -568,7 +571,7 @@
             const pre = el("pre", { class: "code" }, cmd);
             const upre = el("pre", { class: "code" }, build(true));
             const refresh = () => { cmd = build(); pre.textContent = cmd; upre.textContent = build(true); };
-            updCb.addEventListener("change", refresh); termCb.addEventListener("change", refresh); ctrCb.addEventListener("change", refresh);
+            updCb.addEventListener("change", refresh); termCb.addEventListener("change", refresh); ctrCb.addEventListener("change", refresh); netCb.addEventListener("change", refresh);
             if (caCb) caCb.addEventListener("change", refresh);
             body.replaceChildren(el("h3", { class: "small-h" }, T("add.cmd.title")), pre,
               caCb ? el("label", { class: "cb-line" }, caCb, el("span", {}, T("add.ca"))) : null, el("p", { class: "muted small" }, T("add.cmd.note")),
@@ -1039,15 +1042,18 @@
     const h = curHost;
     const tabs = [["state", "host.tab.state", "cpu"], ["software", "host.tab.software", "apps"]];
     if (h.containers_count != null) tabs.push(["containers", "host.tab.containers", "box"]);
+    tabs.push(["network", "host.tab.network", "network"]);
     tabs.push(["history", "host.tab.history", "clock"], ["details", "host.tab.details", "info"]);
     if (me.role === "admin") tabs.push(["terminal", "host.tab.terminal", "terminal"]);
-    const content = hostTab === "software" ? softwareTab(h) : hostTab === "containers" && h.containers_count != null ? containersTab(h) : hostTab === "history" ? historyTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
+    const content = hostTab === "network" ? window.NetMap.hostTab(netCtx(), h) : hostTab === "software" ? softwareTab(h) : hostTab === "containers" && h.containers_count != null ? containersTab(h) : hostTab === "history" ? historyTab(h) : hostTab === "details" ? detailsTab(h) : hostTab === "terminal" && me.role === "admin" ? terminalTab(h) : stateTab(h);
     hostBox.replaceChildren(
       el("div", { class: "tabs", role: "tablist" }, tabs.map(([k, key, ic]) => el("button", { role: "tab", class: "tab" + (hostTab === k ? " active" : ""), "aria-selected": String(hostTab === k),
         onclick: async () => { hostTab = k; if (k === "software" && swState.hostId !== h.id) { swState.items = null; drawHostBody(); await loadSoftware(h); } drawHostBody(); if (k === "state") liveStart(h); else liveStop(); } },
         icon(ic, 16), el("span", {}, T(key))))),
       content);
   }
+  // всё, что нужно сетевой карте (netmap.js) от основного приложения
+  function netCtx() { return { api, fail, me, ago, fmtDate, vAtLeast }; }
   function hostView(id) {
     const head = el("div", { class: "page-head host-head" });
     hostBox = el("div", { class: "host-body" });
@@ -1232,6 +1238,7 @@
     "agent-update": { ic: "download", tone: "info", cat: "hosts" }, "agent-updated": { ic: "check", tone: "ok", cat: "hosts" },
     "ctr-start": { ic: "play", tone: "ok", cat: "containers" }, "ctr-stop": { ic: "stop", tone: "warn", cat: "containers" }, "ctr-restart": { ic: "refresh", tone: "info", cat: "containers" },
     "ctr-rm": { ic: "trash", tone: "fail", cat: "containers" }, "ctr-op": { ic: "box", tone: "", cat: "containers" }, "img-rm": { ic: "trash", tone: "fail", cat: "containers" },
+    "net-label": { ic: "network", tone: "info", cat: "hosts" },
     "agent-update-failed": { ic: "x", tone: "fail", cat: "hosts" }, "agent-update-current": { ic: "check", tone: "", cat: "hosts" },
   };
   function fmtDur(sec) {
@@ -1414,9 +1421,10 @@
     if (p[0] === "audit") return { name: "audit" };
     if (p[0] === "report") return { name: "report" };
     if (p[0] === "apps") return { name: "apps" };
+    if (p[0] === "network") return { name: "network" };
     return { name: "home" };
   }
-  const TITLES = { home: "nav.home", hosts: "nav.hosts", audit: "nav.audit", report: "nav.report", apps: "nav.apps" };
+  const TITLES = { home: "nav.home", hosts: "nav.hosts", audit: "nav.audit", report: "nav.report", apps: "nav.apps", network: "nav.network" };
 
   async function refreshHosts() {
     try { hosts = await api("/api/hosts"); } catch (e) { fail(e); }
@@ -1449,6 +1457,7 @@
       case "audit": view = me.role === "admin" ? auditView() : homeView(); break;
       case "report": view = reportView(); break;
       case "apps": view = appsView(); break;
+      case "network": view = window.NetMap.page(netCtx()); break;
       default: view = homeView();
     }
     root.replaceChildren(topbar(route), view);
@@ -1458,7 +1467,7 @@
       if (document.hidden || document.querySelector(".veil")) return;
       if (route.name === "hosts") { await refreshHosts(); drawHosts(); }
       else if (route.name === "host") {
-        try { curHost = await api("/api/hosts/" + route.id); if (hostTab !== "terminal") drawHostBody(); } catch (_) { /* повторим в следующий раз */ }
+        try { curHost = await api("/api/hosts/" + route.id); if (hostTab !== "terminal" && hostTab !== "network") drawHostBody(); } catch (_) { /* повторим в следующий раз */ }
       }
     }, 15000);
   }

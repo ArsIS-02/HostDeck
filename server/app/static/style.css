@@ -314,3 +314,28 @@ tr.ctr-working { opacity: .75; } @keyframes ctrpulse { 50% { opacity: .4; } }
 .ctr-hint p { margin: 4px 0 10px; } .ctr-hint .code { margin: 0; }
 .cb-col { width: 40px; } .tbl .num, .tbl th.num { text-align: right; white-space: nowrap; }
 .img-name { margin-bottom: 2px; } .img-list { margin: 10px 0 0; padding-left: 18px; max-height: 240px; overflow: auto; } .img-list li { margin: 3px 0; }
+
+/* сетевая карта */
+.lead-sm { margin: -8px 0 16px; }
+.nm-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.nm-graph { padding: 0; overflow: hidden; position: relative; }
+.nm-svg { display: block; touch-action: none; cursor: grab; user-select: none; }
+.nm-note { position: absolute; left: 16px; bottom: 10px; margin: 0; }
+.nm-link { opacity: .8; transition: opacity .15s; } .nm-pair { cursor: pointer; outline: none; } .nm-pair:hover .nm-link, .nm-pair:focus-visible .nm-link { opacity: 1; }
+.nm-pair.dim, .nm-node.dim { opacity: .18; }
+.nm-node { cursor: pointer; outline: none; color: var(--text); } .nm-node circle { fill: var(--card-hi); stroke: var(--accent); stroke-width: 2; }
+.nm-node.k-host circle { stroke: var(--ok); } .nm-node.k-host.off circle { stroke: var(--muted); } .nm-node.k-host.nocol circle { stroke-dasharray: 3 3; }
+.nm-node.k-device circle, .nm-node.k-external circle { stroke: var(--warn); stroke-dasharray: 4 3; } .nm-node.k-internet circle { stroke: var(--accent); fill: var(--accent-soft); }
+.nm-node.sel circle, .nm-node:focus-visible circle { stroke-width: 4; }
+.nm-label { fill: var(--text); font-size: 12px; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.nm-panel { padding: 16px; max-height: 560px; overflow: auto; } .nm-panel h3 { margin: 0; font-size: 17px; } .nm-panel h4 { margin: 14px 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.nm-panel .tbl th, .nm-panel .tbl td, .tbl.compact th, .tbl.compact td { padding: 7px 8px; font-size: 13px; }
+.nm-pt { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.nm-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: baseline; flex: none; }
+.nm-legend { display: grid; gap: 4px; margin-top: 10px; }
+.nm-cat { display: flex; align-items: center; border: 0; background: transparent; color: var(--text); padding: 5px 8px; border-radius: 10px; cursor: pointer; text-align: left; font: inherit; } .nm-cat:hover { background: var(--seg); } .nm-cat.off { opacity: .4; text-decoration: line-through; }
+.nm-search { max-width: 240px; border-radius: 999px; }
+.nm-subnets { display: grid; gap: 16px; } .nm-subnet { display: grid; gap: 10px; } .nm-subnet h4 { margin: 8px 0 0; }
+.nm-host { display: grid; gap: 14px; } .nm-host h3 { margin: 0 0 10px; font-size: 16px; }
+@media (max-width: 900px) { .nm-wrap { grid-template-columns: 1fr; } .nm-panel { max-height: none; } }
+.tbl-wrap { overflow-x: auto; }

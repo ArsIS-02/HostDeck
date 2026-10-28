@@ -16,7 +16,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import db
+from . import db, netmap
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 AGENT_DIR = os.environ.get("HOSTDECK_AGENT_DIR", "/agents")   # сюда образ кладёт собранные агенты
@@ -1041,6 +1041,63 @@ async def host_images_refresh(request: Request):
     return JSONResponse({"queued": True})
 
 
+async def network_map(request: Request):
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    try:
+        hours = max(1, min(168, int(request.query_params.get("hours", "24"))))
+    except ValueError:
+        return err("hours: ожидается число")
+    ext = "ip" if request.query_params.get("external") == "ip" else "group"
+    return JSONResponse(netmap.build_map(hours, time.time(), ONLINE_WINDOW, ext))
+
+
+async def network_topology(request: Request):
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    return JSONResponse(netmap.build_topology(time.time(), ONLINE_WINDOW))
+
+
+async def host_network(request: Request):
+    u, e = need(request, "viewer")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    return JSONResponse(netmap.host_view(hid))
+
+
+async def network_refresh(request: Request):
+    """Просит все хосты со включённым сбором прислать снимок немедленно."""
+    u, e = need(request, "operator")
+    if e:
+        return e
+    n = 0
+    for r in db.q("SELECT id,posture FROM hosts"):
+        info = (json.loads(r["posture"]).get("info") if r["posture"] else None) or {}
+        if info.get("network") == "on":
+            await queue_for(r["id"]).put({"id": secrets.token_hex(4), "type": "net"})
+            n += 1
+    return JSONResponse({"queued": n})
+
+
+async def network_label(request: Request):
+    u, e = need(request, "operator")
+    if e:
+        return e
+    try:
+        d = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    if not netmap.set_label(d.get("ip"), d.get("name"), d.get("note"), time.time()):
+        return err("некорректный адрес")
+    db.audit(u["name"], "net-label", detail=f"{d.get('ip')} → {str(d.get('name') or '')[:80] or 'снято'}")
+    return JSONResponse({"ok": True})
+
+
 async def host_refresh(request: Request):
     u, e = need(request, "operator")
     if e:
@@ -1197,6 +1254,7 @@ async def delete_hosts(user, ids):
         db.x("DELETE FROM idx_points WHERE host_id=?", (hid,))
         db.x("DELETE FROM metric_points WHERE host_id=?", (hid,))
         db.x("DELETE FROM host_images WHERE host_id=?", (hid,))
+        netmap.forget_host(hid)
         queues.pop(hid, None)
         n += 1
     return n
@@ -1381,6 +1439,13 @@ async def agent_report(request: Request):
         clean = clean_images(d)
         db.x("INSERT OR REPLACE INTO host_images(host_id,at,data) VALUES(?,?,?)", (host["id"], now, json.dumps(clean, ensure_ascii=False)))
         return JSONResponse({"ok": True, "count": len(clean)})
+    if kind == "network":
+        snap = netmap.clean_snap(data.get("data"))
+        if snap is None or len(json.dumps(data.get("data"))) > 600_000:
+            return err("некорректные данные")
+        netmap.record(host["id"], snap, now)
+        db.x("UPDATE hosts SET last_seen=? WHERE id=?", (now, host["id"]))
+        return JSONResponse({"ok": True})
     if kind == "op_result":
         d = data.get("data")
         if not isinstance(d, dict) or len(json.dumps(d)) > 20_000:
@@ -1539,6 +1604,11 @@ app = Starlette(
         Route("/api/hosts/{id}/ctr/op", host_ctr_op, methods=["POST"]),
         Route("/api/hosts/{id}/ctr/op/{op}", host_ctr_op_status),
         Route("/api/hosts/{id}/images", host_images),
+        Route("/api/hosts/{id}/network", host_network),
+        Route("/api/network/map", network_map),
+        Route("/api/network/topology", network_topology),
+        Route("/api/network/refresh", network_refresh, methods=["POST"]),
+        Route("/api/network/label", network_label, methods=["POST"]),
         Route("/api/hosts/{id}/images/refresh", host_images_refresh, methods=["POST"]),
         Route("/api/hosts/{id}/metrics/history", host_metric_history),
         Route("/api/hosts/{id}/history", host_history),

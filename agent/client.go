@@ -148,6 +148,10 @@ func (c *Client) reportImages(ctx context.Context, imgs []ImgInfo) error {
 	return c.post(ctx, "/agent/report", map[string]any{"kind": "images", "data": imgs}, nil)
 }
 
+func (c *Client) reportNet(ctx context.Context, snap NetSnap) error {
+	return c.post(ctx, "/agent/report", map[string]any{"kind": "network", "data": snap}, nil)
+}
+
 func (c *Client) reportSoftware(ctx context.Context, items []SoftwareItem) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()

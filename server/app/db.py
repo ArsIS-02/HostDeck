@@ -37,6 +37,15 @@ CREATE TABLE IF NOT EXISTS metric_points(
 CREATE INDEX IF NOT EXISTS metric_points_host ON metric_points(host_id, ts);
 CREATE TABLE IF NOT EXISTS host_images(
   host_id TEXT PRIMARY KEY, at REAL NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS host_net(
+  host_id TEXT PRIMARY KEY, at REAL NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS net_edges(
+  host_id TEXT NOT NULL, peer TEXT NOT NULL, port INTEGER NOT NULL, dir TEXT NOT NULL, procs TEXT,
+  first REAL NOT NULL, last REAL NOT NULL, n INTEGER NOT NULL DEFAULT 1, samples INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY(host_id, peer, port, dir));
+CREATE INDEX IF NOT EXISTS net_edges_last ON net_edges(last);
+CREATE TABLE IF NOT EXISTS net_labels(
+  ip TEXT PRIMARY KEY, name TEXT NOT NULL, note TEXT, updated REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS audit(
   id INTEGER PRIMARY KEY, ts REAL NOT NULL, actor TEXT, host TEXT, action TEXT NOT NULL, detail TEXT);
 """

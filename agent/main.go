@@ -17,8 +17,8 @@ import (
 func usage() {
 	fmt.Fprintf(os.Stderr, `hostdeck-agent %s
 
-  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-containers] [-autoupdate] [-update-key КЛЮЧ] [-config путь]
-  hostdeck-agent set [-autoupdate on|off] [-containers on|off] [-update-key КЛЮЧ|off] [-config путь]   # обновление из веб-интерфейса, управление контейнерами, ключ подписи
+  hostdeck-agent enroll -server https://host -token hde_... [-name имя] [-ca ca.pem] [-terminal] [-containers] [-network] [-autoupdate] [-update-key КЛЮЧ] [-config путь]
+  hostdeck-agent set [-autoupdate on|off] [-containers on|off] [-network on|off] [-update-key КЛЮЧ|off] [-config путь]   # обновление из веб-интерфейса, управление контейнерами, ключ подписи
   hostdeck-agent probe [-o файл] [-raw]                  # собрать сырые выводы команд для отладки проверок (запускать через sudo)
   hostdeck-agent run [-config путь]
   hostdeck-agent collect        # один раз собрать состояние и вывести JSON (для проверки)
@@ -68,6 +68,7 @@ func cmdEnroll(args []string) {
 	ca := fs.String("ca", "", "файл корневого сертификата (PEM), если сервер подписан своим CA")
 	terminal := fs.Bool("terminal", false, "разрешить root-консоль из веб-интерфейса (по умолчанию выключено)")
 	ctrs := fs.Bool("containers", false, "разрешить управление контейнерами и образами из веб-интерфейса (по умолчанию выключено)")
+	netw := fs.Bool("network", false, "собирать данные для сетевой карты: интерфейсы, соседи, соединения (по умолчанию выключено)")
 	autoupd := fs.Bool("autoupdate", false, "разрешить обновление агента из веб-интерфейса (по умолчанию выключено)")
 	ukey := fs.String("update-key", "", "открытый ключ Ed25519 (base64): обновлять только из списка с подписью этого ключа")
 	cfgPath := fs.String("config", defaultConfigPath(), "путь к конфигу")
@@ -96,7 +97,7 @@ func cmdEnroll(args []string) {
 	if err := c.post(ctx, "/agent/enroll", map[string]string{"token": *token, "name": *name, "os": osName(), "version": version}, &r); err != nil {
 		log.Fatalf("регистрация не удалась: %v", err)
 	}
-	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15, AllowTerminal: *terminal, AllowContainers: *ctrs, AllowUpdate: *autoupd, UpdateKey: strings.TrimSpace(*ukey)}
+	cfg := &Config{Server: *server, HostID: r.HostID, HostKey: r.HostKey, Name: *name, CAFile: *ca, IntervalMin: 15, AllowTerminal: *terminal, AllowContainers: *ctrs, AllowNetwork: *netw, AllowUpdate: *autoupd, UpdateKey: strings.TrimSpace(*ukey)}
 	if err := saveConfig(*cfgPath, cfg); err != nil {
 		log.Fatalf("не удалось сохранить конфиг: %v", err)
 	}
@@ -120,6 +121,7 @@ func cmdRun(args []string) {
 	os_ := osName()
 	allowTerminal = cfg.AllowTerminal
 	allowContainers = cfg.AllowContainers
+	allowNetwork = cfg.AllowNetwork
 	allowUpdate = cfg.AllowUpdate
 	updateKey = cfg.UpdateKey
 	allowedPorts = cfg.AllowedPorts
@@ -152,6 +154,14 @@ func cmdRun(args []string) {
 			log.Printf("отправка списка образов: %v", err)
 		}
 	}
+	sendNet := func() {
+		if !allowNetwork {
+			return
+		}
+		if err := c.reportNet(ctx, collectNet()); err != nil && ctx.Err() == nil {
+			log.Printf("отправка сетевой карты: %v", err)
+		}
+	}
 	// handleCtr выполняет команду управления контейнерами или образами и сообщает результат; затем обновляет список контейнеров и образов
 	handleCtr := func(cmd Command) {
 		var a OpArgs
@@ -181,6 +191,20 @@ func cmdRun(args []string) {
 			}
 		}
 	}()
+	if allowNetwork {
+		go func() { // данные для сетевой карты — раз в минуту
+			t := time.NewTicker(time.Minute)
+			defer t.Stop()
+			for {
+				sendNet()
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+			}
+		}()
+	}
 	go func() { // список ПО — раз в сутки и по запросу
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()
@@ -236,6 +260,8 @@ func cmdRun(args []string) {
 				go sendSoftware()
 			case "images":
 				go sendImages()
+			case "net":
+				go sendNet()
 			case "ctr":
 				go handleCtr(cmd)
 			case "live":
@@ -266,8 +292,9 @@ func cmdSet(args []string) {
 	au := fs.String("autoupdate", "", "on или off: обновление агента из веб-интерфейса")
 	uk := fs.String("update-key", "", "открытый ключ подписи обновлений (base64) или off, чтобы снять")
 	cm := fs.String("containers", "", "on или off: управление контейнерами и образами из веб-интерфейса")
+	nw := fs.String("network", "", "on или off: сбор данных для сетевой карты")
 	_ = fs.Parse(args)
-	if *au == "" && *uk == "" && *cm == "" {
+	if *au == "" && *uk == "" && *cm == "" && *nw == "" {
 		usage()
 	}
 	cfg, err := loadConfig(*cfgPath)
@@ -292,6 +319,15 @@ func cmdSet(args []string) {
 	default:
 		log.Fatalf("containers: ожидается on или off, получено %q", *cm)
 	}
+	switch *nw {
+	case "on":
+		cfg.AllowNetwork = true
+	case "off":
+		cfg.AllowNetwork = false
+	case "":
+	default:
+		log.Fatalf("network: ожидается on или off, получено %q", *nw)
+	}
 	switch *uk {
 	case "":
 	case "off":
@@ -310,6 +346,9 @@ func cmdSet(args []string) {
 	}
 	if *cm != "" {
 		fmt.Printf("управление контейнерами из веб-интерфейса: %s (вступит в силу после перезапуска агента)\n", *cm)
+	}
+	if *nw != "" {
+		fmt.Printf("сбор данных для сетевой карты: %s (вступит в силу после перезапуска агента)\n", *nw)
 	}
 	if *uk != "" {
 		fmt.Printf("ключ подписи обновлений: %s\n", map[bool]string{true: "снят", false: "закреплён"}[*uk == "off"])
