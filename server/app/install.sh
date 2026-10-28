@@ -8,6 +8,8 @@
 #   HOSTDECK_TERMINAL=1   разрешить root-консоль из веб-интерфейса на этом хосте (по умолчанию выключено)
 #   HOSTDECK_CONTAINERS=1 разрешить управление контейнерами и образами (запуск, остановка, удаление) из веб-интерфейса, только для admin
 #                         (0 — запретить; не задано — оставить как есть). Команды выполняются от root, поэтому по умолчанию выключено
+#   HOSTDECK_NETWORK=1    собирать данные для сетевой карты: интерфейсы, соседей по ARP, слушающие порты и соединения хоста
+#                         (0 — выключить; не задано — оставить как есть). Ничего не сканируется, содержимое трафика не читается
 #   HOSTDECK_UPDATE_KEY=КЛЮЧ закрепить открытый ключ подписи обновлений (Ed25519, base64): агент будет обновляться только из подписанного списка
 #   HOSTDECK_AUTOUPDATE=1 разрешить серверу обновлять этого агента по кнопке в веб-интерфейсе (0 — запретить; не задано —
 #                         оставить как есть). Обновление заменяет программу, работающую от root, поэтому по умолчанию выключено
@@ -76,9 +78,11 @@ if [ -n "$TOKEN" ]; then
   [ "${HOSTDECK_TERMINAL:-0}" = 1 ] && ARGS+=(-terminal)   # root-консоль включается только явно
   [ "${HOSTDECK_AUTOUPDATE:-0}" = 1 ] && ARGS+=(-autoupdate)   # обновление из веба тоже только явно
   [ "${HOSTDECK_CONTAINERS:-0}" = 1 ] && ARGS+=(-containers)   # управление контейнерами тоже только явно
+  [ "${HOSTDECK_NETWORK:-0}" = 1 ] && ARGS+=(-network)   # сбор данных сетевой карты тоже только явно
   [ -n "${HOSTDECK_UPDATE_KEY:-}" ] && ARGS+=(-update-key "$HOSTDECK_UPDATE_KEY")   # закрепить ключ подписи обновлений
   /usr/local/bin/hostdeck-agent "${ARGS[@]}"
-elif [ -n "${HOSTDECK_AUTOUPDATE:-}" ] || [ -n "${HOSTDECK_UPDATE_KEY:-}" ] || [ -n "${HOSTDECK_CONTAINERS:-}" ]; then
+elif [ -n "${HOSTDECK_AUTOUPDATE:-}" ] || [ -n "${HOSTDECK_UPDATE_KEY:-}" ] || [ -n "${HOSTDECK_CONTAINERS:-}" ] || [ -n "${HOSTDECK_NETWORK:-}" ]; then
+  case "${HOSTDECK_NETWORK:-}" in 1) /usr/local/bin/hostdeck-agent set -network on;; 0) /usr/local/bin/hostdeck-agent set -network off;; esac
   case "${HOSTDECK_CONTAINERS:-}" in 1) /usr/local/bin/hostdeck-agent set -containers on;; 0) /usr/local/bin/hostdeck-agent set -containers off;; esac
   case "${HOSTDECK_AUTOUPDATE:-}" in 1) /usr/local/bin/hostdeck-agent set -autoupdate on;; 0) /usr/local/bin/hostdeck-agent set -autoupdate off;; esac
   [ -n "${HOSTDECK_UPDATE_KEY:-}" ] && /usr/local/bin/hostdeck-agent set -update-key "$HOSTDECK_UPDATE_KEY"

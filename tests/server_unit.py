@@ -107,5 +107,49 @@ m.OPS["o3"] = {"host": "h1", "actor": "admin", "action": "start", "target": "web
 m.expire_ops(time.time())
 ok("o3" not in m.OPS, "операции: старые записи удаляются")
 
+# сетевая карта
+from app import netmap  # noqa: E402
+now = time.time()
+db.x("INSERT INTO hosts(id,name,key_hash,created,last_seen) VALUES('hA','alpha','x',?,?)", (now, now))
+db.x("INSERT INTO hosts(id,name,key_hash,created,last_seen) VALUES('hB','beta','x',?,?)", (now, now))
+def snap(ip, mac, conns, neigh=(), gw="192.168.1.1"):
+    return netmap.clean_snap({"at": now, "ifaces": [{"name": "eth0", "mac": mac, "addrs": [ip + "/24"], "up": True},
+        {"name": "docker0", "mac": "02:42:00:00:00:01", "addrs": ["172.17.0.1/16"], "up": True, "virtual": True}],
+        "gateways": [gw], "dns": [gw], "neigh": list(neigh), "listen": [{"port": 22, "addr": "0.0.0.0", "proc": "sshd"}], "conns": conns})
+bad = netmap.clean_snap({"ifaces": [{"name": "x", "addrs": ["не-адрес"]}], "conns": [{"dir": "sideways", "peer": "1.2.3.4", "port": 1}, {"dir": "out", "peer": "bad", "port": 1}]})
+ok(bad["ifaces"][0]["addrs"] == [] and bad["conns"] == [], "карта: мусорные адреса и направления отбрасываются")
+netmap.record("hA", snap("192.168.1.10", "aa:aa:aa:aa:aa:01", [
+    {"dir": "out", "peer": "192.168.1.11", "port": 22, "proc": "ssh", "n": 1},
+    {"dir": "out", "peer": "93.184.216.34", "port": 443, "proc": "curl", "n": 2},
+    {"dir": "out", "peer": "8.8.4.4", "port": 443, "proc": "curl", "n": 1},
+    {"dir": "out", "peer": "192.168.1.50", "port": 9000, "proc": "agent", "n": 3}],
+    neigh=[{"ip": "192.168.1.1", "mac": "aa:aa:aa:00:00:01"}, {"ip": "192.168.1.50", "mac": "aa:aa:aa:00:00:50"}, {"ip": "192.168.1.11", "mac": "aa:aa:aa:aa:aa:02"}]), now)
+netmap.record("hB", snap("192.168.1.11", "aa:aa:aa:aa:aa:02", [{"dir": "in", "peer": "192.168.1.10", "port": 22, "proc": "sshd", "n": 1}]), now)
+mp = netmap.build_map(24, now, 90)
+kinds = {n["id"]: n["kind"] for n in mp["nodes"]}
+ok(kinds.get("hA") == "host" and kinds.get("hB") == "host" and kinds.get("inet") == "internet" and kinds.get("ip:192.168.1.50") == "device", "карта: узлы — хосты, Интернет и неизвестное устройство")
+ssh = [l for l in mp["links"] if l["port"] == 22]
+ok(len(ssh) == 1 and ssh[0]["from"] == "hA" and ssh[0]["to"] == "hB" and sorted(ssh[0]["procs"]) == ["ssh", "sshd"], "карта: out на A и in на B сливаются в одну связь A → B")
+inet = [l for l in mp["links"] if l["to"] == "inet"]
+ok(len(inet) == 1 and inet[0]["n"] == 3 and inet[0]["peers"] == 2 and next(n for n in mp["nodes"] if n["id"] == "inet")["count"] == 2, "карта: внешние адреса сворачиваются в «Интернет»")
+ok(all(172 != int(i.split(".")[0]) for n in mp["nodes"] for i in n["ips"] if n["kind"] == "host"), "карта: адреса мостов контейнеров не считаются адресами хоста")
+mp2 = netmap.build_map(24, now, 90, "ip")
+ok(any(n["kind"] == "external" for n in mp2["nodes"]), "карта: режим «по адресам» раскрывает внешние узлы")
+tp = netmap.build_topology(now, 90)
+sn = tp["subnets"]
+ok(len(sn) == 1 and sn[0]["cidr"] == "192.168.1.0/24" and len(sn[0]["hosts"]) == 2, "топология: одна подсеть, два хоста, мост контейнеров не в счёт")
+ok([d["ip"] for d in sn[0]["devices"]] == ["192.168.1.1", "192.168.1.50"] and sn[0]["devices"][0]["gateway"], "топология: соседи по ARP без агента — неизвестные устройства, шлюз отмечен")
+netmap.set_label("192.168.1.50", "Принтер", "кабинет 2", now)
+ok(netmap.build_topology(now, 90)["subnets"][0]["devices"][1]["name"] == "Принтер" and next(n for n in netmap.build_map(24, now, 90)["nodes"] if n["id"] == "ip:192.168.1.50")["name"] == "Принтер", "метка устройства видна и в топологии, и на графе")
+ok(not netmap.set_label("не-адрес", "x", "", now), "метка: неверный адрес отклоняется")
+netmap.set_label("192.168.1.50", "", "", now)
+ok(db.q1("SELECT COUNT(*) n FROM net_labels")["n"] == 0, "метка: пустое имя снимает метку")
+hv = netmap.host_view("hA")
+ok(hv["listen"][0]["service"] == "SSH" and hv["conns"][0]["service"] and hv["hosts"].get("192.168.1.11") == "beta", "вид хоста: службы и имена известных хостов")
+db.x("UPDATE net_edges SET last=?", (now - 3 * 86400,))
+ok(not any(l["from"] == "hA" for l in netmap.build_map(24, now, 90)["links"]) and any(l["from"] == "hA" for l in netmap.build_map(168, now, 90)["links"]), "карта: окно времени отсекает старые связи")
+netmap.forget_host("hB")
+ok(netmap.host_view("hB")["at"] is None, "удаление хоста чистит его данные карты")
+
 print("\nИТОГО: %d/%d" % (sum(res), len(res)))
 sys.exit(0 if all(res) else 1)
