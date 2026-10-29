@@ -195,6 +195,8 @@ curl -fsSL https://hostdeck.example.test/install.sh | sudo bash -s -- <токе�
 
 ![Сетевая карта: связи между хостами](docs/images/network-map-demo.png)
 
+![Сетевая карта: хосты сгруппированы по подсетям, переключатель IPv4 и IPv6](docs/images/network-map-zones-demo.png)
+
 ![Сетевая карта: топология подсети и неизвестные устройства](docs/images/network-topology-demo.png)
 
 ![Вкладка «Сеть» на странице хоста](docs/images/network-host-tab-demo.png)

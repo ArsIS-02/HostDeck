@@ -321,7 +321,10 @@ tr.ctr-working { opacity: .75; } @keyframes ctrpulse { 50% { opacity: .4; } }
 .nm-graph { padding: 0; overflow: hidden; position: relative; }
 .nm-svg { display: block; touch-action: none; cursor: grab; user-select: none; }
 .nm-note { position: absolute; left: 16px; bottom: 10px; margin: 0; }
-.nm-link { opacity: .8; transition: opacity .15s; } .nm-pair { cursor: pointer; outline: none; } .nm-pair:hover .nm-link, .nm-pair:focus-visible .nm-link { opacity: 1; }
+.nm-link { opacity: .5; transition: opacity .15s; } .nm-pair { cursor: pointer; outline: none; } .nm-pair:hover .nm-link, .nm-pair:focus-visible .nm-link, .nm-pair.hot .nm-link { opacity: 1; }
+.nm-zone rect { fill: var(--seg); stroke: var(--line2); stroke-width: 1; opacity: .55; } .nm-zone.k-ext rect { fill: var(--accent-soft); stroke-dasharray: 5 4; } .nm-zone.k-none rect { stroke-dasharray: 3 4; }
+.nm-zone-t { fill: var(--text); font-size: 13px; font-weight: 600; font-family: var(--mono); } .nm-zone-c { fill: var(--muted); font-size: 12px; }
+.nm-node.k-external .nm-label { display: none; } .nm-node.k-external:hover .nm-label, .nm-node.k-external.sel .nm-label, .nm-node.k-external.near .nm-label { display: block; }
 .nm-pair.dim, .nm-node.dim { opacity: .18; }
 .nm-node { cursor: pointer; outline: none; color: var(--text); } .nm-node circle { fill: var(--card-hi); stroke: var(--accent); stroke-width: 2; }
 .nm-node.k-host circle { stroke: var(--ok); } .nm-node.k-host.off circle { stroke: var(--muted); } .nm-node.k-host.nocol circle { stroke-dasharray: 3 3; }

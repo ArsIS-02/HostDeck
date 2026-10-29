@@ -120,5 +120,19 @@ for i, sn in SN.items():
     netmap.record(hid, sn, now)
     # накопленные за день связи: часть была давно
     db.x("UPDATE net_edges SET first=? WHERE host_id=?", (now - 20 * 3600, hid))
+# ещё хосты в других подсетях и IPv6 — проверка, что карта остаётся читаемой
+import ipaddress
+for k in range(6 if os.environ.get("SEED_BIG") else 0):  # SEED_BIG=1 — большой парк для проверки читаемости карты
+    hid = "extra%02d" % k
+    sub = 10 + k % 2
+    db.x("INSERT OR REPLACE INTO hosts(id,name,os,agent_version,key_hash,created,last_seen,posture) VALUES(?,?,?,?,?,?,?,?)",
+         (hid, "lab-node-%d.monitoring.test" % k, "linux", "0.9.0", "x", now, now - 5, json.dumps({"collected_at": now, "info": {"os": "linux", "network": "on"}, "checks": []})))
+    ip = "10.%d.0.%d" % (sub, 10 + k)
+    peers = [("10.%d.0.%d" % (sub, 10 + j)) for j in range(6) if j != k and j % 2 == k % 2][:2]
+    cn = [c("out", pr, 22, "ssh") for pr in peers] + [c("out", "192.168.1.30", 514, "fluent-bit", 2), c("out", "192.168.1.1", 53, "resolved", 3), c("out", "fd00:%d::%d" % (sub, 10 + (k + 1) % 6), 443, "curl", 2),
+          c("out", "2606:4700::%d" % (k + 1), 443, "curl", 3), c("out", "fe80::%d" % (k + 5), 5353, "avahi")] + [c("out", "93.184.%d.%d" % (j, k), 443, "curl", 1) for j in range(1, 9)]
+    sn = netmap.clean_snap({"at": now, "ifaces": [{"name": "eth0", "mac": "02:00:00:00:%02x:%02x" % (sub, k), "addrs": [ip + "/24", "fd00:%d::%d/64" % (sub, 10 + k), "fe80::1/64"], "up": True}],
+                            "gateways": ["10.%d.0.1" % sub], "dns": ["192.168.1.1"], "neigh": [], "listen": [], "conns": cn})
+    netmap.record(hid, sn, now)
 netmap.set_label("192.168.1.55", "Принтер HP", "кабинет", now)
 print("ok")
