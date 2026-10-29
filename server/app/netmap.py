@@ -95,17 +95,37 @@ def record(hid, snap, now):
     db.x("DELETE FROM net_edges WHERE last<?", (now - KEEP_SEC,))
 
 
-def _is_private(ip):
+ULA = ipaddress.ip_network("fc00::/7")
+EXT_TOP = 40  # в режиме «внешние адреса по отдельности» рисуются самые активные, остальные сворачиваются в «Интернет»
+
+
+def _noise(ip):
+    """Адреса, которых на карте быть не должно: loopback, link-local (fe80::, 169.254), multicast, неопределённый."""
     a = ipaddress.ip_address(ip)
-    return a.is_private or a.is_link_local
+    return a.is_loopback or a.is_link_local or a.is_multicast or a.is_unspecified
 
 
-def _lan_nets(iface):
-    """IPv4-подсети интерфейса, не служебные: без link-local и loopback."""
+def _is_lan(ip):
+    """Локальный адрес сети: частный IPv4 или ULA (fc00::/7) для IPv6. Остальные считаются внешними."""
+    a = ipaddress.ip_address(ip)
+    return a.is_private if a.version == 4 else a in ULA
+
+
+def _lan_nets(iface, family=4):
+    """Подсети интерфейса нужного семейства, не служебные: без link-local и loopback. Для IPv6 это ULA и глобальные адреса."""
     for a in iface.get("addrs", []):
         i = ipaddress.ip_interface(a)
-        if i.version == 4 and not i.ip.is_link_local and not i.ip.is_loopback and i.network.prefixlen < 32:
+        if i.version == family and not _noise(str(i.ip)) and i.network.prefixlen < i.max_prefixlen:
             yield i
+
+
+def _zone_of(ip, nets):
+    """Зона на карте: известная подсеть хостов, иначе /24 (IPv4) или /64 (IPv6)."""
+    a = ipaddress.ip_address(ip)
+    for n in nets:
+        if a.version == n.version and a in n:
+            return str(n)
+    return str(ipaddress.ip_network(f"{ip}/{24 if a.version == 4 else 64}", strict=False))
 
 
 def _load(now, online_window):
@@ -129,46 +149,62 @@ def _load(now, online_window):
     return hosts, snaps, labels, ip2host
 
 
-def build_map(hours, now, online_window, external="group"):
-    """Граф: узлы — хосты, неизвестные устройства сети и «Интернет»; рёбра — группы соединений по службе."""
+def build_map(hours, now, online_window, external="group", family=4):
+    """Граф для одного семейства адресов (IPv4 или IPv6). Узлы — хосты, неизвестные устройства сети и «Интернет»;
+    рёбра — группы соединений по службе. У каждого узла есть зона: подсеть, в которой он лежит, или «ext» для внешних."""
     hosts, snaps, labels, ip2host = _load(now, online_window)
     since = now - hours * 3600
     nodes = {}
+    host_ips = {}
     for h in hosts:
         sn = snaps.get(h["id"])
         ips = []
         if sn:
             for itf in sn[1]["ifaces"]:
                 if not itf["virtual"] and itf["up"]:
-                    ips += [str(i.ip) for i in _lan_nets(itf)]
+                    ips += [str(i.ip) for i in _lan_nets(itf, family)]
+        host_ips[h["id"]] = ips
+    nets = sorted({i.network for h in hosts for itf in (snaps[h["id"]][1]["ifaces"] if h["id"] in snaps else [])
+                   if not itf["virtual"] and itf["up"] for i in _lan_nets(itf, family)}, key=lambda n: (n.network_address, n.prefixlen))
+    for h in hosts:
+        sn = snaps.get(h["id"])
+        ips = host_ips[h["id"]]
         nodes[h["id"]] = {"id": h["id"], "kind": "host", "name": h["name"], "ips": ips, "os": h["os"],
+                          "zone": _zone_of(ips[0], nets) if ips else "none",
                           "online": bool(h["last_seen"] and now - h["last_seen"] <= online_window),
                           "collecting": sn is not None, "listen": len(sn[1]["listen"]) if sn else 0}
+    rows = [e for e in db.q("SELECT host_id,peer,port,dir,procs,first,last,n,samples FROM net_edges WHERE last>=?", (since,))
+            if e["host_id"] in nodes and ipaddress.ip_address(e["peer"]).version == family and not _noise(e["peer"])]
+    top = None
+    if external == "ip":  # самые активные внешние адреса; остальные уйдут в «Интернет»
+        act = {}
+        for e in rows:
+            if e["peer"] not in ip2host and not _is_lan(e["peer"]):
+                act[e["peer"]] = act.get(e["peer"], 0) + e["n"]
+        top = set(sorted(act, key=lambda k: -act[k])[:EXT_TOP])
     links = {}
 
     def node_for(ip):
         if ip in ip2host:
             return ip2host[ip]
-        if _is_private(ip):
+        if _is_lan(ip):
             nid = "ip:" + ip
             if nid not in nodes:
                 lb = labels.get(ip)
-                nodes[nid] = {"id": nid, "kind": "device", "name": lb["name"] if lb else ip, "ips": [ip], "labeled": bool(lb)}
+                nodes[nid] = {"id": nid, "kind": "device", "name": lb["name"] if lb else ip, "ips": [ip], "labeled": bool(lb), "zone": _zone_of(ip, nets)}
             return nid
-        if external == "ip":
+        if top is not None and ip in top:
             nid = "ip:" + ip
             if nid not in nodes:
                 lb = labels.get(ip)
-                nodes[nid] = {"id": nid, "kind": "external", "name": lb["name"] if lb else ip, "ips": [ip], "labeled": bool(lb)}
+                nodes[nid] = {"id": nid, "kind": "external", "name": lb["name"] if lb else ip, "ips": [ip], "labeled": bool(lb), "zone": "ext"}
             return nid
         if "inet" not in nodes:
-            nodes["inet"] = {"id": "inet", "kind": "internet", "name": "Интернет", "ips": [], "count": 0}
+            nodes["inet"] = {"id": "inet", "kind": "internet", "name": "Интернет", "ips": [], "count": 0, "zone": "ext"}
         nodes["inet"]["ips"].append(ip)
         return "inet"
 
-    for e in db.q("SELECT host_id,peer,port,dir,procs,first,last,n,samples FROM net_edges WHERE last>=?", (since,)):
-        if e["host_id"] not in nodes:
-            continue
+    for e in rows:
         peer = node_for(e["peer"])
         if peer == e["host_id"]:
             continue
@@ -180,7 +216,8 @@ def build_map(hours, now, online_window, external="group"):
             sv = service_of(e["port"])
             L = links[k] = {"from": a, "to": b, "port": e["port"], "service": sv["name"], "cat": sv["cat"], "n": 0, "first": e["first"], "last": e["last"],
                             "procs": [], "peers": set(), "samples": 0}
-        L["n"] = max(L["n"], e["n"]) if (a in nodes and b in nodes and nodes[a]["kind"] == "host" and nodes[b]["kind"] == "host") else L["n"] + e["n"]
+        both_hosts = nodes[a]["kind"] == "host" and nodes[b]["kind"] == "host"
+        L["n"] = max(L["n"], e["n"]) if both_hosts else L["n"] + e["n"]
         L["first"], L["last"] = min(L["first"], e["first"]), max(L["last"], e["last"])
         L["samples"] += e["samples"]
         L["peers"].add(e["peer"])
@@ -197,10 +234,14 @@ def build_map(hours, now, online_window, external="group"):
         nodes["inet"]["ips"] = sorted(set(nodes["inet"]["ips"]))
         nodes["inet"]["count"] = len(nodes["inet"]["ips"])
         nodes["inet"]["ips"] = nodes["inet"]["ips"][:20]
-    return {"now": now, "hours": hours, "nodes": list(nodes.values()), "links": out_links[:1500]}
+    zones = sorted({n["zone"] for n in nodes.values() if n["zone"] not in ("ext", "none")}, key=lambda z: (ipaddress.ip_network(z).version, ipaddress.ip_network(z).network_address))
+    for z in ("ext", "none"):
+        if any(n["zone"] == z for n in nodes.values()):
+            zones.append(z)
+    return {"now": now, "hours": hours, "family": family, "zones": zones, "nodes": list(nodes.values()), "links": out_links[:1500]}
 
 
-def build_topology(now, online_window):
+def build_topology(now, online_window, family=4):
     """Подсети: хосты с агентами, шлюз, DNS и соседи по ARP, которых мы не знаем (неизвестные устройства)."""
     hosts, snaps, labels, ip2host = _load(now, online_window)
     names = {h["id"]: h["name"] for h in hosts}
@@ -212,7 +253,7 @@ def build_topology(now, online_window):
         for itf in sn[1]["ifaces"]:
             if itf["virtual"] or not itf["up"]:
                 continue
-            for i in _lan_nets(itf):
+            for i in _lan_nets(itf, family):
                 n = nets.setdefault(str(i.network), {"cidr": str(i.network), "hosts": [], "gateways": {}, "dns": {}, "devices": {}, "_net": i.network})
                 n["hosts"].append({"id": h["id"], "name": h["name"], "ip": str(i.ip), "mac": itf["mac"], "iface": itf["name"]})
     for hid, (at, sn) in snaps.items():
@@ -227,7 +268,7 @@ def build_topology(now, online_window):
                     n["dns"].setdefault(g, set()).add(hid)
             for nb in sn["neigh"]:
                 ip = ipaddress.ip_address(nb["ip"])
-                if ip.version == 4 and ip in n["_net"] and nb["ip"] not in ip2host:
+                if ip.version == family and ip in n["_net"] and nb["ip"] not in ip2host:
                     d = n["devices"].setdefault(nb["ip"], {"ip": nb["ip"], "mac": nb["mac"], "seen_by": set()})
                     d["seen_by"].add(hid)
     res = []
@@ -244,7 +285,7 @@ def build_topology(now, online_window):
                     "gateways": [{"ip": g, "host": names.get(ip2host.get(g, ""), ""), "by": len(v)} for g, v in n["gateways"].items()],
                     "dns": [{"ip": g, "host": names.get(ip2host.get(g, ""), ""), "by": len(v)} for g, v in n["dns"].items()],
                     "devices": devs})
-    return {"now": now, "subnets": res, "collecting": len(snaps), "hosts": len(hosts)}
+    return {"now": now, "family": family, "subnets": res, "collecting": len(snaps), "hosts": len(hosts)}
 
 
 def host_view(hid):

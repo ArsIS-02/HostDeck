@@ -151,5 +151,28 @@ ok(not any(l["from"] == "hA" for l in netmap.build_map(24, now, 90)["links"]) an
 netmap.forget_host("hB")
 ok(netmap.host_view("hB")["at"] is None, "удаление хоста чистит его данные карты")
 
+# IPv4 и IPv6 разделены; link-local и «шум» на карту не попадают; зоны = подсети
+db.x("INSERT INTO hosts(id,name,key_hash,created,last_seen) VALUES('hC','gamma','x',?,?)", (now, now))
+db.x("INSERT INTO hosts(id,name,key_hash,created,last_seen) VALUES('hD','delta','x',?,?)", (now, now))
+def snap6(v4, v6, conns):
+    return netmap.clean_snap({"at": now, "ifaces": [{"name": "eth0", "mac": "aa:aa:aa:aa:00:" + v4[-2:], "addrs": [v4 + "/24", v6 + "/64", "fe80::1/64"], "up": True}],
+        "gateways": [], "dns": [], "neigh": [], "listen": [], "conns": conns})
+netmap.record("hC", snap6("10.1.0.3", "fd00:1::3", [
+    {"dir": "out", "peer": "10.1.0.4", "port": 22, "proc": "ssh", "n": 1}, {"dir": "out", "peer": "fd00:1::4", "port": 443, "proc": "curl", "n": 2},
+    {"dir": "out", "peer": "fe80::99", "port": 5353, "proc": "avahi", "n": 1}, {"dir": "out", "peer": "2606:4700::1111", "port": 443, "proc": "curl", "n": 3},
+    {"dir": "out", "peer": "10.1.0.50", "port": 80, "proc": "curl", "n": 1}]), now)
+netmap.record("hD", snap6("10.1.0.4", "fd00:1::4", []), now)
+m4 = netmap.build_map(24, now, 90, "group", 4)
+m6 = netmap.build_map(24, now, 90, "group", 6)
+ok(m4["family"] == 4 and m6["family"] == 6, "семейство адресов указано в ответе")
+ok(any(l["from"] == "hC" and l["to"] == "hD" and l["port"] == 22 for l in m4["links"]) and not any(l["port"] == 443 and l["to"] == "hD" for l in m4["links"]), "IPv4: ssh между хостами есть, IPv6-соединение сюда не попадает")
+ok(any(l["from"] == "hC" and l["to"] == "hD" and l["port"] == 443 for l in m6["links"]) and not any(l["port"] == 22 and l["to"] == "hD" for l in m6["links"]), "IPv6: соединение по fd00:: есть, IPv4 сюда не попадает")
+ok(not any(l["port"] == 5353 for l in m4["links"] + m6["links"]) and not any(i.startswith("fe80") for n in m6["nodes"] for i in n["ips"]), "link-local (fe80::) на карту не попадает")
+ok(all(not i.count(":") for n in m4["nodes"] if n["kind"] == "host" for i in n["ips"]) and next(n for n in m6["nodes"] if n["id"] == "hC")["ips"] == ["fd00:1::3"], "адреса хоста разделены по семейству")
+zn = {n["id"]: n["zone"] for n in m4["nodes"]}
+ok(zn["hC"] == zn["hD"] == "10.1.0.0/24" and zn["ip:10.1.0.50"] == "10.1.0.0/24" and "inet" not in zn, "зоны: хосты и устройство в одной подсети")
+ok(next(n for n in m6["nodes"] if n["id"] == "hC")["zone"] == "fd00:1::/64" and any(n["kind"] == "internet" and n["zone"] == "ext" for n in m6["nodes"]), "IPv6: зона /64 и внешний адрес сворачивается в «Интернет»")
+ok(netmap.build_topology(now, 90, 6)["subnets"][0]["cidr"] == "fd00:1::/64" and all(":" not in x["cidr"] for x in netmap.build_topology(now, 90, 4)["subnets"]), "топология разделена по IPv4 и IPv6")
+
 print("\nИТОГО: %d/%d" % (sum(res), len(res)))
 sys.exit(0 if all(res) else 1)

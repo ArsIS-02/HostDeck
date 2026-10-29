@@ -1050,14 +1050,16 @@ async def network_map(request: Request):
     except ValueError:
         return err("hours: ожидается число")
     ext = "ip" if request.query_params.get("external") == "ip" else "group"
-    return JSONResponse(netmap.build_map(hours, time.time(), ONLINE_WINDOW, ext))
+    fam = 6 if request.query_params.get("family") == "6" else 4
+    return JSONResponse(netmap.build_map(hours, time.time(), ONLINE_WINDOW, ext, fam))
 
 
 async def network_topology(request: Request):
     u, e = need(request, "viewer")
     if e:
         return e
-    return JSONResponse(netmap.build_topology(time.time(), ONLINE_WINDOW))
+    fam = 6 if request.query_params.get("family") == "6" else 4
+    return JSONResponse(netmap.build_topology(time.time(), ONLINE_WINDOW, fam))
 
 
 async def host_network(request: Request):
