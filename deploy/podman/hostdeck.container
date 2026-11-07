@@ -21,6 +21,10 @@ Environment=HOSTDECK_ADMIN_PASSWORD_FILE=/run/secrets/admin_pw
 Environment=HOSTDECK_ADMIN_USER=admin
 # Заголовки X-Forwarded-* принимаются от любого адреса: контейнер виден только Caddy в n8n-net и localhost хоста
 Environment=FORWARDED_ALLOW_IPS=*
+# Оповещения в Graylog по GELF и выгрузка хостов для справочников (README, раздел «Graylog»); пусто — выключено
+#Environment=HOSTDECK_GELF_HOST=host.containers.internal
+#Environment=HOSTDECK_GELF_PORT=12201
+#Environment=HOSTDECK_EXPORT_TOKEN=
 # ReadOnly=true не используем: runc на RED OS не создаёт точку монтирования секрета в ФС только для чтения
 Tmpfs=/tmp
 NoNewPrivileges=true

@@ -141,6 +141,8 @@ def audit(actor, action, host=None, detail=None, host_name=None):
         host_name = row["name"] if row else None
     x("INSERT INTO audit(ts,actor,host,host_name,action,detail) VALUES(?,?,?,?,?,?)",
       (time.time(), actor, host, host_name, action, detail))
+    from . import gelf
+    gelf.audit(actor, action, host, host_name, detail)
 
 
 def ensure_admin():

@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import hashlib
+import ipaddress
 import json
 import re
 import os
@@ -16,7 +17,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import db, netmap
+from . import db, gelf, netmap
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 AGENT_DIR = os.environ.get("HOSTDECK_AGENT_DIR", "/agents")   # сюда образ кладёт собранные агенты
@@ -423,6 +424,7 @@ def record_history(hid, old, new, now):
     if not old:
         return
     prev = {c.get("id"): c for c in old.get("checks", []) if c.get("id")}
+    changed = []
     for c in new.get("checks", []):
         cid, st = c.get("id"), c.get("status", "unknown")
         o = prev.get(cid)
@@ -430,6 +432,14 @@ def record_history(hid, old, new, now):
             continue
         db.x("INSERT INTO history(host_id,ts,check_id,from_status,to_status,value,detail) VALUES(?,?,?,?,?,?,?)",
              (hid, now, cid, o.get("status"), st, str(c.get("value") or "")[:60], str(c.get("detail") or "")[:200]))
+        changed.append((c, o.get("status")))
+    if changed and gelf.SENDER:
+        row = db.q1("SELECT id,name,os,profile FROM hosts WHERE id=?", (hid,))
+        if row:
+            prof, exc = host_profile(row), active_exceptions(hid, now)
+            for c, was in changed:
+                eff = effective_checks([c], prof, exc)[0]
+                gelf.check_changed(dict(row), c, was, eff["status"], prof, eff.get("exception"))
     db.x("DELETE FROM history WHERE host_id=? AND (ts<? OR id NOT IN (SELECT id FROM history WHERE host_id=? ORDER BY id DESC LIMIT ?))",
          (hid, now - HISTORY_KEEP_DAYS * 86400, hid, HISTORY_MAX_ROWS))
 
@@ -1306,6 +1316,100 @@ async def token_create(request: Request):
                          "install_sha256": hashlib.sha256(script.encode("utf-8")).hexdigest() if script else None})
 
 
+# --- Graylog: состояние отправки, тестовое сообщение, выгрузка для справочников --------------------
+EXPORT_TOKEN = os.environ.get("HOSTDECK_EXPORT_TOKEN", "")
+
+
+async def graylog_info(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    snd = gelf.SENDER
+    out = {"enabled": bool(snd), "export": bool(EXPORT_TOKEN)}
+    if snd:
+        out.update({"target": "%s:%d/%s" % (snd.host, snd.port, snd.proto)}, **snd.status)
+    return JSONResponse(out)
+
+
+async def graylog_test(request: Request):
+    u, e = need(request, "admin")
+    if e:
+        return e
+    snd = gelf.SENDER
+    if not snd:
+        return err("отправка в Graylog выключена: задайте HOSTDECK_GELF_HOST")
+    try:
+        await asyncio.to_thread(snd.send_now, gelf.message(
+            "HostDeck: тестовое сообщение", {"hd_source": "hostdeck", "homelab_app": "hostdeck", "hd_event": "test",
+                                             "hd_actor": u["name"]}, snd.source, 6))
+    except (OSError, ValueError) as ex:
+        return err("Graylog недоступен: %s" % ex, 502)
+    return JSONResponse({"ok": True})
+
+
+def host_ips(hid):
+    """Адреса хоста из последнего снимка сети: только поднятые не виртуальные интерфейсы, без link-local и loopback."""
+    row = db.q1("SELECT data FROM host_net WHERE host_id=?", (hid,))
+    if not row:
+        return []
+    out = []
+    for itf in json.loads(row["data"]).get("ifaces", []):
+        if itf.get("virtual") or not itf.get("up"):
+            continue
+        for a in itf.get("addrs", []):
+            try:
+                ip = ipaddress.ip_interface(a).ip
+            except ValueError:
+                continue
+            if not ip.is_link_local and not ip.is_loopback and str(ip) not in out:
+                out.append(str(ip))
+    return out
+
+
+def export_rows(key="name"):
+    """Хосты для Lookup Tables Graylog. Колонки: key, name, os, profile, status, index, agent_version.
+    key=name — ключ имя хоста и его короткое имя; key=ip — каждый адрес хоста и подписи адресов с карты сети."""
+    rows = []
+    for r in db.q(HOST_SELECT + " ORDER BY name"):
+        sm = summarize(r)
+        base = [r["name"], r["os"] or "", sm.get("profile") or "", sm.get("status") or "",
+                "" if sm.get("index") is None else str(sm["index"]), r["agent_version"] or ""]
+        if key == "ip":
+            keys = host_ips(r["id"])
+        else:
+            keys = [r["name"]] + ([r["name"].split(".")[0]] if "." in r["name"] else [])
+        rows += [[k] + base for k in keys]
+    if key == "ip":
+        have = {x[0] for x in rows}
+        for lb in db.q("SELECT ip,name FROM net_labels ORDER BY ip"):
+            if lb["ip"] not in have:
+                rows.append([lb["ip"], lb["name"], "", "label", "", "", ""])
+    return rows
+
+
+async def export_hosts(request: Request):
+    """CSV для адаптера Graylog «DSV File from HTTP». Доступ только по токену HOSTDECK_EXPORT_TOKEN."""
+    import csv
+    import hmac
+    import io
+    if not EXPORT_TOKEN:
+        return err("не найдено", 404)
+    given = request.query_params.get("token") or request.headers.get("x-hostdeck-token") or ""
+    if not hmac.compare_digest(given.encode(), EXPORT_TOKEN.encode()):
+        await asyncio.sleep(0.5)
+        return err("неверный токен", 403)
+    key = request.query_params.get("key", "name")
+    if key not in ("name", "ip"):
+        return err("key: name или ip")
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    if request.query_params.get("header", "1") not in ("0", "no", "false"):
+        w.writerow(["key", "name", "os", "profile", "status", "index", "agent_version"])
+    for row in export_rows(key):
+        w.writerow(row)
+    return Response(buf.getvalue(), media_type="text/csv; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+
 async def audit_list(request: Request):
     u, e = need(request, "admin")
     if e:
@@ -1629,6 +1733,9 @@ app = Starlette(
         Route("/api/exceptions", exceptions_list),
         Route("/api/report", report_data),
         Route("/api/backup", backup_download),
+        Route("/api/graylog", graylog_info),
+        Route("/api/graylog/test", graylog_test, methods=["POST"]),
+        Route("/api/export/hosts.csv", export_hosts),
         Route("/api/backup/check", backup_check, methods=["POST"]),
         Route("/api/hosts/update", hosts_update_many, methods=["POST"]),
         Route("/api/hosts/{id}/update", host_update, methods=["POST"]),

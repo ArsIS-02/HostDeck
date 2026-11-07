@@ -8,6 +8,9 @@ services:
       # Нужен только при первом запуске, когда в базе ещё нет пользователей.
       HOSTDECK_ADMIN_PASSWORD: ${HOSTDECK_ADMIN_PASSWORD:-}
       HOSTDECK_ADMIN_USER: ${HOSTDECK_ADMIN_USER:-admin}
+      HOSTDECK_GELF_HOST: ${HOSTDECK_GELF_HOST:-}
+      HOSTDECK_GELF_PORT: ${HOSTDECK_GELF_PORT:-12201}
+      HOSTDECK_EXPORT_TOKEN: ${HOSTDECK_EXPORT_TOKEN:-}
       # Адрес обратного прокси, которому доверяем заголовки X-Forwarded-*
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
     volumes:

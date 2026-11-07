@@ -281,6 +281,7 @@
         stat("alert", c.warn, T("home.stat.warn"), "warn"), stat("x", c.fail, T("home.stat.problems"), "fail")),
       expiringCard(),
       me.role === "admin" ? backupCard() : null,
+      me.role === "admin" ? graylogCard() : null,
       el("h2", { class: "sec" }, T("home.how.title")), el("section", { class: "grid3" }, how),
       el("section", { class: "split" },
         el("div", { class: "card" }, el("h2", { class: "sec in" }, T("home.start.title")),
@@ -441,6 +442,24 @@
       } catch (e) { msg.textContent = ""; fail(e); }
     } });
     return el("section", { class: "card" }, el("h2", { class: "sec in" }, T("bak.title")), el("p", { class: "muted small" }, T("bak.sub")), el("div", { class: "hero-cta" }, dl, ck), msg);
+  }
+
+  // Graylog: куда уходят оповещения, сколько отправлено, тестовое сообщение
+  function graylogCard() {
+    const box = el("section", { class: "card" }, el("h2", { class: "sec in" }, T("gl.title")), el("p", { class: "muted small" }, T("common.loading")));
+    api("/api/graylog").then((g) => {
+      const msg = el("p", { class: "muted small", role: "status" });
+      const test = button(T("gl.test"), { icon: "check", onclick: async () => {
+        try { await api("/api/graylog/test", { method: "POST", body: {} }); toast(T("gl.sent")); } catch (e) { fail(e); }
+      } });
+      test.disabled = !g.enabled;
+      const info = g.enabled
+        ? T("gl.on", { t: g.target, n: g.sent || 0, e: g.errors || 0 }) + (g.last_error ? " " + T("gl.lasterr", { e: g.last_error }) : "")
+        : T("gl.off");
+      box.replaceChildren(el("h2", { class: "sec in" }, T("gl.title")), el("p", { class: "muted small" }, info),
+        el("p", { class: "muted small" }, T(g.export ? "gl.export.on" : "gl.export.off")), el("div", { class: "hero-cta" }, test), msg);
+    }).catch(() => box.remove());
+    return box;
   }
 
   // Обзор: исключения, срок которых истекает или истёк, чтобы замечание не вернулось неожиданно
