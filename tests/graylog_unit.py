@@ -31,6 +31,7 @@ def recv(wait=1.0):
 now = time.time()
 db.x("INSERT INTO hosts(id,name,os,key_hash,created,profile,agent_version) VALUES('h1','redos-server.corp.example','RED OS 8','x',?,'server','0.9.0')", (now,))
 db.x("INSERT INTO hosts(id,name,os,key_hash,created,profile) VALUES('h2','mac-1','macOS 26','x',?,'laptop')", (now,))
+db.x("INSERT INTO hosts(id,name,os,key_hash,created,profile) VALUES('h3','redos-server.other.example','RED OS 8','x',?,'lab')", (now,))
 P = lambda **kw: {"checks": [{"id": k, "status": v, "value": "v-" + v, "detail": "d-" + k} for k, v in kw.items()]}
 
 m.record_history("h1", P(selinux="ok", sshd="ok", auditd="warn"), P(selinux="fail", sshd="warn", auditd="ok"), now)
@@ -75,6 +76,9 @@ r = c.get("/api/export/hosts.csv?token=s3cr3t")
 rows = {x["key"]: x for x in csv.DictReader(io.StringIO(r.text))}
 ok(r.status_code == 200 and rows["redos-server.corp.example"]["os"] == "RED OS 8" and rows["redos-server"]["profile"] == "server", "key=name: полное и короткое имя, ОС, профиль")
 ok(rows["mac-1"]["profile"] == "lab", "профиль второго хоста")
+raw = c.get("/api/export/hosts.csv?token=s3cr3t&header=0").text.split()
+ks = [ln.split(",")[0].lower() for ln in raw]
+ok(len(ks) == len(set(ks)) and rows["redos-server"]["name"] == "redos-server.corp.example", "ключи без повторов: короткое имя у первого хоста")
 r = c.get("/api/export/hosts.csv?token=s3cr3t&key=ip&header=0")
 keys = {ln.split(",")[0]: ln.split(",")[1] for ln in r.text.splitlines()}
 ok(keys.get("192.0.2.10") == "redos-server.corp.example" and "10.88.0.1" not in keys and not any(k.startswith("fe80") for k in keys), "key=ip: адрес хоста, без виртуальных и link-local")

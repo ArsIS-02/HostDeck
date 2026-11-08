@@ -1380,11 +1380,16 @@ def export_rows(key="name"):
             keys = [r["name"]] + ([r["name"].split(".")[0]] if "." in r["name"] else [])
         rows += [[k] + base for k in keys]
     if key == "ip":
-        have = {x[0] for x in rows}
         for lb in db.q("SELECT ip,name FROM net_labels ORDER BY ip"):
-            if lb["ip"] not in have:
-                rows.append([lb["ip"], lb["name"], "", "label", "", "", ""])
-    return rows
+            rows.append([lb["ip"], lb["name"], "", "label", "", "", ""])
+    # ключ — один раз (без учёта регистра): адаптер Graylog «DSV File from HTTP» на повторе бросает
+    # загрузку всей таблицы; первыми идут строки хостов, поэтому при совпадении остаются они
+    out, seen = [], set()
+    for r in rows:
+        if r[0].lower() not in seen:
+            seen.add(r[0].lower())
+            out.append(r)
+    return out
 
 
 async def export_hosts(request: Request):
