@@ -76,7 +76,7 @@ r = c.get("/api/export/hosts.csv?token=s3cr3t")
 rows = {x["key"]: x for x in csv.DictReader(io.StringIO(r.text))}
 ok(r.status_code == 200 and rows["redos-server.corp.example"]["os"] == "RED OS 8" and rows["redos-server"]["profile"] == "server", "key=name: полное и короткое имя, ОС, профиль")
 ok(rows["mac-1"]["profile"] == "lab", "профиль второго хоста")
-raw = c.get("/api/export/hosts.csv?token=s3cr3t&header=0").text.split()
+raw = c.get("/api/export/hosts.csv?token=s3cr3t&header=0").text.splitlines()
 ks = [ln.split(",")[0].lower() for ln in raw]
 ok(len(ks) == len(set(ks)) and rows["redos-server"]["name"] == "redos-server.corp.example", "ключи без повторов: короткое имя у первого хоста")
 r = c.get("/api/export/hosts.csv?token=s3cr3t&key=ip&header=0")
