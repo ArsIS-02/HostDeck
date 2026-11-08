@@ -1692,9 +1692,23 @@ class SecurityHeaders:
 from starlette.middleware import Middleware
 
 
+def heartbeat_stats():
+    """Статистика для пульса панели: хостов в базе и проверок со статусом fail (сырых)."""
+    total = (db.q1("SELECT COUNT(*) AS n FROM hosts") or {"n": 0})["n"]
+    failing = 0
+    for r in db.q("SELECT posture FROM hosts WHERE posture IS NOT NULL"):
+        try:
+            checks = (json.loads(r["posture"]) or {}).get("checks", [])
+        except ValueError:
+            continue
+        failing += sum(1 for c in checks if c.get("status") == "fail")
+    return total, failing
+
+
 @asynccontextmanager
 async def lifespan(app):
     janitor = asyncio.create_task(term_janitor())
+    gelf.start_heartbeat(heartbeat_stats)
     r = db.ensure_admin()
     if r == "no-admin":
         print("HostDeck: пользователей нет. Задайте HOSTDECK_ADMIN_PASSWORD и перезапустите, чтобы создать администратора.", flush=True)

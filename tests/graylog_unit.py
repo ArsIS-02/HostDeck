@@ -85,5 +85,15 @@ ok(keys.get("192.0.2.10") == "redos-server.corp.example" and "10.88.0.1" not in 
 ok(keys.get("192.0.2.1") == "router-1", "подписи адресов с карты сети попадают в выгрузку")
 ok(c.get("/api/export/hosts.csv?token=s3cr3t&key=mac").status_code == 400, "неизвестный key — 400")
 
+# пульс панели
+db.x("UPDATE hosts SET posture=? WHERE id='h1'", (json.dumps(P(selinux="fail", sshd="ok", auditd="fail")),))
+total, failing = m.heartbeat_stats()
+ok(total == 3 and failing == 2, "heartbeat_stats: 3 хоста, 2 провала")
+gelf.heartbeat(total, failing)
+x = [x for x in recv() if x.get("_hd_event") == "heartbeat"][0]
+ok(x["_hd_hosts_total"] == 3 and x["_hd_checks_failing"] == 2 and x["level"] == 6, "heartbeat: счётчики и уровень info")
+ok(x["_hd_source"] == "hostdeck" and x["_homelab_app"] == "hostdeck", "heartbeat: поля потока")
+ok("панель на связи" in x["short_message"], "heartbeat: текст сообщения")
+
 print("\nИТОГО: %d/%d" % (sum(res), len(res)))
 sys.exit(0 if all(res) else 1)

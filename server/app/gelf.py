@@ -174,3 +174,43 @@ def audit(actor, action, host_id=None, host_name=None, detail=None):
                  4 if action in WARN_ACTIONS else (6 if action in INFO_ACTIONS else 5))
     except Exception as e:  # noqa: BLE001
         log.warning("GELF: запись журнала не отправлена: %s", e)
+
+
+# ---------- пульс панели ----------
+
+HB_EVERY = int(os.environ.get("HOSTDECK_GELF_HEARTBEAT") or 3600)
+
+
+def heartbeat(hosts_total, checks_failing):
+    """Пульс панели: раз в час. По его отсутствию Graylog замечает, что молчит сама панель
+    (алерт «Тишина: HostDeck»)."""
+    s = SENDER
+    if not s:
+        return
+    s.submit("HostDeck: панель на связи (хостов %d, провалов %d)" % (hosts_total, checks_failing),
+             {"hd_source": "hostdeck", "homelab_app": "hostdeck", "hd_event": "heartbeat",
+              "hd_hosts_total": hosts_total, "hd_checks_failing": checks_failing}, 6)
+
+
+def start_heartbeat(stats_fn, every=None):
+    """Фоновый пульс панели: первый — через минуту после старта, дальше раз в `every` секунд
+    (по умолчанию час). stats_fn() → (hosts_total, checks_failing).
+    Без настроенного GELF поток не стартует. Возвращает поток или None."""
+    if SENDER is None:
+        log.info("GELF не настроен — пульс панели выключен")
+        return None
+    every = every or HB_EVERY
+
+    def loop():
+        time.sleep(60)               # дать панели подняться; первый пульс — через минуту
+        while True:
+            try:
+                heartbeat(*stats_fn())
+            except Exception as e:   # noqa: BLE001 — пульс не должен умирать из-за одного прохода
+                log.warning("heartbeat: проход не удался: %s", e)
+            time.sleep(every)
+
+    t = threading.Thread(target=loop, name="hostdeck-heartbeat", daemon=True)
+    t.start()
+    log.info("heartbeat: пульс панели каждые %d с", every)
+    return t
