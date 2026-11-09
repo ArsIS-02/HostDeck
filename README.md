@@ -10,6 +10,12 @@
 
 > Проект в работе. Команды, обходные пути ("костыли") и список недоделанного: [docs/lab-notes.md](docs/lab-notes.md). Развёртывание в Podman: [docs/podman.md](docs/podman.md).
 
+## Скриншоты
+
+![Обзор парка хостов](docs/screenshots/overview.png)
+
+![Список хостов](docs/screenshots/hosts.png)
+
 ## Что умеет сейчас
 
 По системам (macOS, Linux, сервер) возможности расписаны в [docs/features.md](docs/features.md), история версий в [CHANGELOG.md](CHANGELOG.md).
