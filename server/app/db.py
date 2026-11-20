@@ -65,7 +65,8 @@ def conn():
                 _conn.execute("ALTER TABLE audit ADD COLUMN host_name TEXT")
             cols = {r[1] for r in _conn.execute("PRAGMA table_info(hosts)")}
             for col, typ in (("metrics", "TEXT"), ("metrics_at", "REAL"), ("profile", "TEXT"),
-                             ("expected_offline", "INTEGER NOT NULL DEFAULT 0")):  # миграции существующих баз
+                             ("expected_offline", "INTEGER NOT NULL DEFAULT 0"),
+                             ("maintenance_until", "REAL"), ("maintenance_reason", "TEXT NOT NULL DEFAULT ''")):  # миграции существующих баз
                 if col not in cols:
                     _conn.execute(f"ALTER TABLE hosts ADD COLUMN {col} {typ}")
         return _conn

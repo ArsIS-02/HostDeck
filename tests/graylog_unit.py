@@ -65,7 +65,8 @@ ok(au["login-failed"]["level"] == 4 and au["login-failed"]["_hd_detail"] == "198
 ok(au["login"]["level"] == 6, "вход: info")
 
 # выгрузка
-db.x("UPDATE hosts SET expected_offline=1 WHERE id='h2'")
+db.x("UPDATE hosts SET expected_offline=1,maintenance_until=?,maintenance_reason='старые работы' WHERE id='h2'", (now - 1,))
+db.x("UPDATE hosts SET maintenance_until=?,maintenance_reason='плановое обновление' WHERE id='h1'", (now + 3600,))
 netmap.record("h1", netmap.clean_snap({"at": now, "ifaces": [{"name": "eth0", "addrs": ["192.0.2.10/24", "fe80::1/64"], "up": True},
                                                               {"name": "podman0", "addrs": ["10.88.0.1/16"], "up": True, "virtual": True}],
                                        "conns": []}), now)
@@ -77,8 +78,10 @@ r = c.get("/api/export/hosts.csv?token=s3cr3t")
 rows = {x["key"]: x for x in csv.DictReader(io.StringIO(r.text))}
 ok(r.status_code == 200 and rows["redos-server.corp.example"]["os"] == "RED OS 8" and rows["redos-server"]["profile"] == "server", "key=name: полное и короткое имя, ОС, профиль")
 ok(rows["mac-1"]["profile"] == "lab", "профиль второго хоста")
-ok(list(rows["mac-1"]) == ["key", "name", "os", "profile", "status", "index", "agent_version", "online", "expected_offline"], "CSV: новые колонки добавлены после прежних семи")
+ok(list(rows["mac-1"]) == ["key", "name", "os", "profile", "status", "index", "agent_version", "online", "expected_offline", "maintenance_until", "maintenance_reason"], "CSV: новые колонки добавлены только в конец")
 ok(rows["mac-1"]["online"] == "0" and rows["mac-1"]["expected_offline"] == "1", "CSV: фактический online и expected_offline выгружаются раздельно")
+ok(rows["mac-1"]["maintenance_until"] == "0" and rows["mac-1"]["maintenance_reason"] == "", "CSV: истёкшее обслуживание не активно")
+ok(rows["redos-server.corp.example"]["maintenance_until"] == str(int(now + 3600)) and rows["redos-server.corp.example"]["maintenance_reason"] == "плановое обновление", "CSV: активное обслуживание содержит срок и причину")
 ok(rows["redos-server.corp.example"]["expected_offline"] == "0" and rows["redos-server.corp.example"]["agent_version"] == "0.9.0", "CSV: прежние поля и значение по умолчанию сохранены")
 ok(c.get("/api/export/hosts.csv?key=name", headers={"X-HostDeck-Token": "s3cr3t"}).status_code == 200, "токен выгрузки принимается в заголовке")
 raw = c.get("/api/export/hosts.csv?token=s3cr3t&header=0").text.splitlines()

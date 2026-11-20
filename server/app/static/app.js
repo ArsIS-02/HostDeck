@@ -1074,6 +1074,28 @@
   }
   // всё, что нужно сетевой карте (netmap.js) от основного приложения
   function netCtx() { return { api, fail, me, ago, fmtDate, vAtLeast }; }
+  async function maintenanceDialog(h) {
+    const initial = h.maintenance_active ? h.maintenance_until : Math.floor(Date.now() / 1000) + 3600;
+    const date = new Date(initial * 1000);
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const until = el("input", { type: "datetime-local", class: "input", value: local, required: "required", "aria-label": T("maintenance.until") });
+    const reason = el("input", { type: "text", class: "input", maxlength: "300", value: h.maintenance_reason || "", placeholder: T("maintenance.reason.ph"), "aria-label": T("maintenance.reason") });
+    const body = el("div", { class: "form" }, el("p", {}, T("maintenance.body")),
+      el("label", {}, T("maintenance.until")), until, el("label", {}, T("maintenance.reason")), reason);
+    const action = await dialog({ title: T("maintenance.title"), icon: "clock", tone: "info", body,
+      buttons: [{ text: T("common.cancel"), value: false },
+        h.maintenance_active ? { text: T("maintenance.clear"), value: "clear", kind: "danger" } : null,
+        { text: T("maintenance.save"), value: true, kind: "primary" }].filter(Boolean) });
+    if (!action) return;
+    try {
+      const timestamp = action === "clear" ? null : Math.floor(new Date(until.value).getTime() / 1000);
+      const r = await api(`/api/hosts/${h.id}/maintenance`, { method: "POST", body: { maintenance_until: timestamp, reason: reason.value } });
+      if (r.zabbix?.status === "error") toast(T("maintenance.zabbix.error", { error: r.zabbix.error }), "error");
+      else if (r.zabbix?.status === "disabled") toast(T("maintenance.saved.disabled"));
+      else toast(T(action === "clear" ? "maintenance.cleared" : "maintenance.saved"));
+      renderAll();
+    } catch (e) { fail(e); }
+  }
   function hostView(id) {
     const head = el("div", { class: "page-head host-head" });
     hostBox = el("div", { class: "host-body" });
@@ -1097,6 +1119,8 @@
           me.role !== "viewer" ? button(h.expected_offline ? T("host.expected.off") : T("host.expected.on"), { icon: "clock", kind: h.expected_offline ? "primary" : "", title: T("host.expected.hint"), onclick: async () => {
             try { await api(`/api/hosts/${id}/expected-offline`, { method: "POST", body: { expected_offline: !h.expected_offline } }); toast(T(h.expected_offline ? "host.expected.saved.off" : "host.expected.saved.on")); renderAll(); } catch (e) { fail(e); }
           } }) : h.expected_offline ? chip("clock", T("host.expected.on"), "") : null,
+          h.maintenance_active ? chip("clock", T("maintenance.active", { date: fmtDate(h.maintenance_until) }), "c-warn") : null,
+          me.role !== "viewer" ? button(T("maintenance.title"), { icon: "clock", kind: h.maintenance_active ? "primary" : "", title: h.maintenance_reason || T("maintenance.body"), onclick: () => maintenanceDialog(h) }) : null,
           h.update_available ? chip("download", T("host.update.avail", { v: h.agent_latest }), "c-warn") : (h.agent_version ? chip("check", T("host.update.current"), "c-ok") : null),
           el("span", { class: "spacer" }),
           me.role !== "viewer" ? button(T("host.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${id}/refresh`, { method: "POST", body: {} }); toast(T("host.refresh.queued")); } catch (e) { fail(e); } } }) : null,

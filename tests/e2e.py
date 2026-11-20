@@ -113,6 +113,17 @@ res.append(ok(call("/api/hosts/"+hid+"/expected-offline","POST",{"expected_offli
 res.append(ok(call("/api/hosts/nope/expected-offline","POST",{"expected_offline":True})[0]==404,"expected_offline для неизвестного хоста -> 404"))
 s,eo,_=call("/api/hosts/"+hid+"/expected-offline","POST",{"expected_offline":False})
 res.append(ok(s==200 and eo.get("expected_offline") is False,"признак ожидаемого выключения снимается"))
+until=int(time.time())+3600
+s,mt,_=call("/api/hosts/"+hid+"/maintenance","POST",{"maintenance_until":until,"reason":"  плановое\nобновление  "})
+s,d_mt,_=call("/api/hosts/"+hid)
+res.append(ok(s==200 and mt.get("maintenance_until")==until and mt.get("maintenance_reason")=="плановое обновление" and d_mt.get("maintenance_active") is True and mt.get("zabbix",{}).get("status")=="disabled","окно обслуживания установлено; без настройки Zabbix интеграция отключена"))
+res.append(ok(call("/api/hosts/"+hid+"/maintenance","POST",{"maintenance_until":until,"reason":""})[0]==400,"обслуживание требует непустую причину"))
+res.append(ok(call("/api/hosts/"+hid+"/maintenance","POST",{"maintenance_until":"2027-01-01T12:00:00","reason":"обновление"})[0]==400,"обслуживание отклоняет дату без часового пояса"))
+res.append(ok(call("/api/hosts/"+hid+"/maintenance","POST",{"maintenance_until":until,"reason":"обновление"},"text/plain")[0]==400,"обслуживание отклоняет не-JSON запрос"))
+res.append(ok(call("/api/hosts/"+hid+"/maintenance","POST",{"maintenance_until":until,"reason":"обновление"},opener=anon)[0]==401,"обслуживание без входа -> 401"))
+res.append(ok(call("/api/hosts/nope/maintenance","POST",{"maintenance_until":until,"reason":"обновление"})[0]==404,"обслуживание для неизвестного хоста -> 404"))
+s,mt,_=call("/api/hosts/"+hid+"/maintenance","POST",{"maintenance_until":None})
+res.append(ok(s==200 and mt.get("maintenance_until") is None and mt.get("maintenance_active") is False and mt.get("zabbix",{}).get("status")=="disabled","окно обслуживания снимается"))
 s,d,_=call("/api/hosts/"+hid)
 res.append(ok(len(d["checks"])>=2 and d["info"].get("os"),"подробности хоста: проверок=%d"%len(d["checks"])))
 ids={c["id"] for c in d["checks"]}

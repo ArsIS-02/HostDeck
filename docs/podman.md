@@ -81,6 +81,30 @@ location / {
 
 Если прокси стоит на другом хосте, опубликуйте порт на его адресе (`PublishPort=<ip>:8080:8080`) и укажите этот IP в `FORWARDED_ALLOW_IPS`, но только для доверенного прокси.
 
+## 5. Окна обслуживания в Zabbix
+
+Создайте в Zabbix отдельный API-токен с правами только на чтение хостов и управление обслуживанием. Не используйте токен администратора и не храните его в репозитории. Сохраните токен на сервере в файле с правами `0600`. Для rootless Podman назначьте файл UID приложения, иначе контейнер увидит mount, но не сможет прочитать секрет:
+
+```bash
+chmod 600 /home/user/secrets/zabbix-token
+podman unshare chown 10001:10001 /home/user/secrets/zabbix-token
+```
+
+Затем добавьте drop-in для Quadlet (адреса и пути примерные):
+
+```ini
+[Container]
+Environment=ZABBIX_API=https://zabbix.example.test/api_jsonrpc.php
+Environment=ZABBIX_TOKEN_FILE=/run/secrets/zabbix_token
+Environment=ZABBIX_CA_FILE=/etc/hostdeck/zabbix-ca.pem
+Volume=/home/user/secrets/zabbix-token:/run/secrets/zabbix_token:ro,Z
+Volume=/home/user/hostdeck-ca/zabbix-ca.pem:/etc/hostdeck/zabbix-ca.pem:ro,Z
+```
+
+`ZABBIX_CA_FILE` нужен только для своего CA; вместо `ZABBIX_TOKEN_FILE` можно использовать `ZABBIX_TOKEN`, но файл предпочтительнее. Примените изменения через `systemctl --user daemon-reload && systemctl --user restart hostdeck`.
+
+Имя хоста в HostDeck должно точно совпадать с техническим или видимым именем одного хоста в Zabbix. HostDeck управляет только окнами `HostDeck / <имя хоста>`, не трогая созданные вручную. Снятие обслуживания удаляет его окно. Ошибка Zabbix не откатывает сохранённое состояние HostDeck и показывается в интерфейсе.
+
 ## Типичные проблемы
 
 - **`Permission denied` на `/data`** при bind-mount каталога из домашней папки: в rootless-режиме uid внутри контейнера (10001) отображается на другой uid хоста. Используйте именованный том, как в юните, либо `podman unshare chown 10001:10001 ./data`.

@@ -17,7 +17,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import db, gelf, netmap
+from . import db, gelf, host_maintenance, netmap
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 AGENT_DIR = os.environ.get("HOSTDECK_AGENT_DIR", "/agents")   # сюда образ кладёт собранные агенты
@@ -360,6 +360,7 @@ async def me(request: Request):
 # --- хосты ---------------------------------------------------------------
 # список ПО в сводку не тянем: считаем записи на стороне SQLite
 HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,metrics,metrics_at,software_at,profile,expected_offline,"
+               "maintenance_until,maintenance_reason,"
                "CASE WHEN software IS NULL THEN NULL ELSE json_array_length(software) END AS software_count FROM hosts")
 RANK = {"fail": 3, "warn": 2, "unknown": 1, "ok": 0, "info": 0, "na": 0}
 
@@ -592,6 +593,9 @@ def summarize(row, detail=False):
         "id": row["id"], "name": row["name"], "os": row["os"], "agent_version": row["agent_version"],
         "online": online, "last_seen": row["last_seen"], "posture_at": row["posture_at"],
         "expected_offline": bool(row["expected_offline"]),
+        "maintenance_until": row["maintenance_until"],
+        "maintenance_reason": row["maintenance_reason"] or "",
+        "maintenance_active": host_maintenance.active_until(row["maintenance_until"], now) is not None,
         "status": worst, "counts": counts, "profile": profile, "index": compliance_index(checks) if posture else None,
         "exceptions": len(exc),
         "info": (posture or {}).get("info", {}),
@@ -840,6 +844,36 @@ async def host_expected_offline_set(request: Request):
     db.x("UPDATE hosts SET expected_offline=? WHERE id=?", (int(value), hid))
     db.audit(u["name"], "expected-offline-set", host=hid, detail="1" if value else "0")
     return JSONResponse({"expected_offline": value})
+
+
+async def host_maintenance_set(request: Request):
+    """Сохраняет окно в HostDeck и пытается синхронизировать его с Zabbix."""
+    u, e = need(request, "operator")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    row = db.q1("SELECT id,name FROM hosts WHERE id=?", (hid,))
+    if not row:
+        return err("хост не найден", 404)
+    value = data.get("maintenance_until")
+    try:
+        if value is None:
+            ts, reason = None, ""
+        else:
+            ts = host_maintenance.normalize_until(value)
+            reason = host_maintenance.clean_reason(data.get("reason"))
+    except ValueError as ex:
+        return err(str(ex))
+    db.x("UPDATE hosts SET maintenance_until=?,maintenance_reason=? WHERE id=?", (ts, reason, hid))
+    zabbix = await asyncio.to_thread(host_maintenance.sync_zabbix, row["name"], ts, reason)
+    db.audit(u["name"], "maintenance-set", host=hid,
+             detail="снято" if ts is None else f"до {ts}: {reason}")
+    return JSONResponse({"maintenance_until": ts, "maintenance_reason": reason,
+                         "maintenance_active": ts is not None, "zabbix": zabbix})
 
 
 async def exception_set(request: Request):
@@ -1389,15 +1423,17 @@ def host_ips(hid):
 
 def export_rows(key="name"):
     """Хосты для Lookup Tables Graylog и Atrium.
-    Колонки: key, name, os, profile, status, index, agent_version, online, expected_offline.
-    Первые семь колонок сохраняют прежние позиции для существующих справочников Graylog.
+    Новые колонки добавляются только в конец: позиции существующих полей Graylog не меняются.
     key=name — ключ имя хоста и его короткое имя; key=ip — каждый адрес хоста и подписи адресов с карты сети."""
     rows = []
+    now = time.time()
     for r in db.q(HOST_SELECT + " ORDER BY name"):
         sm = summarize(r)
+        until = host_maintenance.active_until(r["maintenance_until"], now)
         base = [r["name"], r["os"] or "", sm.get("profile") or "", sm.get("status") or "",
                 "" if sm.get("index") is None else str(sm["index"]), r["agent_version"] or "",
-                int(sm["online"]), int(sm["expected_offline"])]
+                int(sm["online"]), int(sm["expected_offline"]), until or 0,
+                (r["maintenance_reason"] or "") if until else ""]
         if key == "ip":
             keys = host_ips(r["id"])
         else:
@@ -1405,7 +1441,7 @@ def export_rows(key="name"):
         rows += [[k] + base for k in keys]
     if key == "ip":
         for lb in db.q("SELECT ip,name FROM net_labels ORDER BY ip"):
-            rows.append([lb["ip"], lb["name"], "", "label", "", "", "", "", ""])
+            rows.append([lb["ip"], lb["name"], "", "label", "", "", "", "", "", "", ""])
     # ключ — один раз (без учёта регистра): адаптер Graylog «DSV File from HTTP» на повторе бросает
     # загрузку всей таблицы; первыми идут строки хостов, поэтому при совпадении остаются они
     out, seen = [], set()
@@ -1433,7 +1469,8 @@ async def export_hosts(request: Request):
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
     if request.query_params.get("header", "1") not in ("0", "no", "false"):
-        w.writerow(["key", "name", "os", "profile", "status", "index", "agent_version", "online", "expected_offline"])
+        w.writerow(["key", "name", "os", "profile", "status", "index", "agent_version", "online", "expected_offline",
+                    "maintenance_until", "maintenance_reason"])
     for row in export_rows(key):
         w.writerow(row)
     return Response(buf.getvalue(), media_type="text/csv; charset=utf-8", headers={"Cache-Control": "no-store"})
@@ -1763,6 +1800,7 @@ app = Starlette(
         Route("/api/hosts/{id}/history", host_history),
         Route("/api/hosts/{id}/profile", host_profile_set, methods=["POST"]),
         Route("/api/hosts/{id}/expected-offline", host_expected_offline_set, methods=["POST"]),
+        Route("/api/hosts/{id}/maintenance", host_maintenance_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions", exception_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions/{check}", exception_delete, methods=["DELETE"]),
         Route("/api/software/search", software_search),
