@@ -97,10 +97,22 @@ res.append(ok(r3.returncode!=0 and "https" in r3.stderr,"агент не раб�
 FAKE=os.path.join(ROOT,"tests","fakebin"); FST=os.path.join(tmp,"fake-podman.json")
 aenv=dict(os.environ,PATH=FAKE+os.pathsep+os.environ["PATH"],FAKE_PODMAN_STATE=FST)   # поддельные podman и systemctl: агент управляет «контейнерами»
 ag=subprocess.Popen([AGENT,"run","-config",cfg],env=aenv,stdout=open(os.path.join(tmp,"agent.log"),"w"),stderr=subprocess.STDOUT)
-time.sleep(4)
-s,hosts,_=call("/api/hosts")
+# На нагруженной машине первый сбор состояния может занять больше фиксированных четырёх секунд.
+for _ in range(30):
+    time.sleep(1)
+    s,hosts,_=call("/api/hosts")
+    if s==200 and len(hosts)==1 and hosts[0]["posture_at"]:
+        break
 res.append(ok(s==200 and len(hosts)==1 and hosts[0]["online"] and hosts[0]["posture_at"],"хост в списке, на связи, отчёт получен"))
 hid=hosts[0]["id"]
+s,eo,_=call("/api/hosts/"+hid+"/expected-offline","POST",{"expected_offline":True})
+s,d_eo,_=call("/api/hosts/"+hid)
+res.append(ok(s==200 and eo.get("expected_offline") is True and d_eo.get("expected_offline") is True,"хост можно отметить как разрешённо выключенный"))
+res.append(ok(call("/api/hosts/"+hid+"/expected-offline","POST",{"expected_offline":1})[0]==400,"expected_offline принимает только JSON boolean"))
+res.append(ok(call("/api/hosts/"+hid+"/expected-offline","POST",{"expected_offline":True},opener=anon)[0]==401,"expected_offline без входа -> 401"))
+res.append(ok(call("/api/hosts/nope/expected-offline","POST",{"expected_offline":True})[0]==404,"expected_offline для неизвестного хоста -> 404"))
+s,eo,_=call("/api/hosts/"+hid+"/expected-offline","POST",{"expected_offline":False})
+res.append(ok(s==200 and eo.get("expected_offline") is False,"признак ожидаемого выключения снимается"))
 s,d,_=call("/api/hosts/"+hid)
 res.append(ok(len(d["checks"])>=2 and d["info"].get("os"),"подробности хоста: проверок=%d"%len(d["checks"])))
 ids={c["id"] for c in d["checks"]}
@@ -109,8 +121,11 @@ want={"uid0","empty_pw","sudo_nopasswd","pw_policy","sysctl","tmp_mount","log_fo
 res.append(ok(len(want-ids)<=1,"проверки соответствия Linux собраны (нет: %s)"%", ".join(sorted(want-ids))))
 t0=d["posture_at"]
 call("/api/hosts/"+hid+"/refresh","POST",{})
-time.sleep(3)
-s,d,_=call("/api/hosts/"+hid)
+for _ in range(20):
+    time.sleep(1)
+    s,d,_=call("/api/hosts/"+hid)
+    if d["posture_at"]>t0:
+        break
 res.append(ok(d["posture_at"]>t0,"команда «обновить» дошла до агента (длинный опрос)"))
 # метрики и ПО
 s,d,_=call("/api/hosts/"+hid)
@@ -167,11 +182,19 @@ res.append(ok(call("/api/hosts/"+hid+"/ctr/op","POST",dict(E("web","start"),id="
 res.append(ok(call("/api/hosts/"+hid+"/ctr/op","POST",dict(E("web","start"),action="exec"))[0]==400,"контейнеры: неизвестное действие -> 400"))
 st_,r_=do_op(E("web","start"))
 res.append(ok(st_==200 and r_["ok"] and r_["code"]=="ok" and r_["state"]=="running","контейнеры: запуск выполнен и проверен (running)"))
-time.sleep(2); res.append(ok(ctr_list()["web"]["state"]=="running","контейнеры: список обновился после действия"))
+for _ in range(15):
+    time.sleep(1)
+    if ctr_list()["web"]["state"]=="running":
+        break
+res.append(ok(ctr_list()["web"]["state"]=="running","контейнеры: список обновился после действия"))
 st_,r_=do_op(E("web","start")); res.append(ok(r_.get("code")=="already","контейнеры: повторный запуск — «уже работает»"))
 st_,r_=do_op(E("live","rm")); res.append(ok(not r_.get("ok") and r_.get("code")=="running","контейнеры: работающий не удаляется без stop_first"))
 st_,r_=do_op(E("live","rm",stop_first=True)); res.append(ok(r_.get("ok") and r_.get("state")=="gone","контейнеры: остановка и удаление выполнены"))
-time.sleep(2); res.append(ok("live" not in ctr_list(),"контейнеры: удалённого нет в списке"))
+for _ in range(15):
+    time.sleep(1)
+    if "live" not in ctr_list():
+        break
+res.append(ok("live" not in ctr_list(),"контейнеры: удалённого нет в списке"))
 st_,r_=do_op(E("svc","rm")); res.append(ok(r_.get("code")=="managed","контейнеры: контейнер юнита systemd не удаляется"))
 st_,r_=do_op(E("svc","stop")); res.append(ok(r_.get("ok") and r_.get("code")=="ok","контейнеры: остановка контейнера юнита идёт через systemctl"))
 st_,r_=do_op(E("web","stop")); res.append(ok(r_.get("ok"),"контейнеры: остановка"))

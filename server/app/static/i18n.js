@@ -49,7 +49,8 @@
     "home.legend.unknown": "Данные ещё не получены",
 
     "status.ok": "В порядке", "status.warn": "Внимание", "status.fail": "Проблема", "status.unknown": "Нет данных", "status.info": "Справка", "status.na": "Не применимо",
-    "status.online": "На связи", "status.offline": "Не в сети",
+    "status.online": "На связи", "status.offline": "Не в сети", "status.expected_offline": "Ожидаемо выключен",
+    "host.expected.on": "Может быть выключен", "host.expected.off": "Должен быть в сети", "host.expected.hint": "Разрешить хосту быть выключенным. Atrium покажет нейтральный статус только пока сам хост не на связи.", "host.expected.saved.on": "Хост можно держать выключенным", "host.expected.saved.off": "Хост снова должен быть в сети", "audit.act.expected-offline-set": "Изменено ожидаемое состояние хоста",
     "hosts.title": "Парк хостов", "hosts.search": "Поиск по имени, модели, системе",
     "hosts.filter": "Состояние", "hosts.filter.all": "Все хосты", "hosts.filter.problems": "С проблемами",
     "hosts.filter.warn": "Требуют внимания", "hosts.filter.ok": "В порядке", "hosts.filter.offline": "Не в сети",
@@ -193,7 +194,8 @@
     "home.legend.unknown": "No data received yet",
 
     "status.ok": "Healthy", "status.warn": "Attention", "status.fail": "Problem", "status.unknown": "No data", "status.info": "Info", "status.na": "Not applicable",
-    "status.online": "Online", "status.offline": "Offline",
+    "status.online": "Online", "status.offline": "Offline", "status.expected_offline": "Expected offline",
+    "host.expected.on": "Allowed to be offline", "host.expected.off": "Expected online", "host.expected.hint": "Allow this host to stay offline. Atrium shows a neutral state only while the host itself is offline.", "host.expected.saved.on": "Host is allowed to stay offline", "host.expected.saved.off": "Host is expected online again", "audit.act.expected-offline-set": "Expected host state changed",
     "hosts.title": "Hosts", "hosts.search": "Search by name, model, system",
     "hosts.filter": "State", "hosts.filter.all": "All hosts", "hosts.filter.problems": "With problems",
     "hosts.filter.warn": "Need attention", "hosts.filter.ok": "Healthy", "hosts.filter.offline": "Offline",

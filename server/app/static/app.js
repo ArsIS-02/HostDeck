@@ -329,7 +329,8 @@
       el("div", { class: "hc-top" }, el("label", { class: "cb-wrap" }, cb), avatar(h, "", 28),
         el("div", { class: "hc-title" }, el("h3", {}, h.name), el("div", { class: "muted small" }, [i.model, osLine(i)].filter(Boolean).join(" · "))),
         badge(h.status, T("status." + h.status))),
-      el("div", { class: "chips" }, i.chip ? chip("cpu", i.chip) : null, i.memory ? chip("memory", i.memory) : null, chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off")),
+      el("div", { class: "chips" }, i.chip ? chip("cpu", i.chip) : null, i.memory ? chip("memory", i.memory) : null,
+        h.online ? chip("check", T("status.online"), "c-ok") : h.expected_offline ? chip("clock", T("status.expected_offline"), "") : chip("x", T("status.offline"), "c-off")),
       el("div", { class: "bars" },
         progress(x.cpu, { label: T("card.cpu"), text: pct(x.cpu) }), progress(x.mem, { label: T("card.mem"), text: pct(x.mem) }), progress(x.disk, { label: T("card.disk"), text: pct(x.disk) })),
       el("div", { class: "hc-foot muted small" }, el("span", {}, icon("clock", 14), " ", T("card.seen", { t: ago(h.last_seen) })),
@@ -1088,11 +1089,14 @@
           avatar(h, "lg", 38),
           el("div", { class: "host-title" }, el("h1", {}, h.name), el("div", { class: "muted" }, [x.model, osLine(x), x.chip].filter(Boolean).join(" · "))),
           badge(h.status, T("status." + h.status), 16),
-          chip(h.online ? "check" : "x", h.online ? T("status.online") : T("status.offline"), h.online ? "c-ok" : "c-off"),
+          h.online ? chip("check", T("status.online"), "c-ok") : h.expected_offline ? chip("clock", T("status.expected_offline"), "") : chip("x", T("status.offline"), "c-off"),
           h.index != null ? chip("shield", T("host.index", { n: h.index }), h.index >= 90 ? "c-ok" : h.index >= 70 ? "c-warn" : "c-off") : null,
           me.role !== "viewer"
             ? select(["server", "laptop", "lab"].map((v) => ({ value: v, label: T("profile." + v) })), h.profile, async (v) => { try { await api(`/api/hosts/${id}/profile`, { method: "POST", body: { profile: v } }); toast(T("profile.saved")); renderAll(); } catch (e) { fail(e); } }, { caption: T("profile.cap") })
             : chip("sliders", T("profile." + h.profile), ""),
+          me.role !== "viewer" ? button(h.expected_offline ? T("host.expected.off") : T("host.expected.on"), { icon: "clock", kind: h.expected_offline ? "primary" : "", title: T("host.expected.hint"), onclick: async () => {
+            try { await api(`/api/hosts/${id}/expected-offline`, { method: "POST", body: { expected_offline: !h.expected_offline } }); toast(T(h.expected_offline ? "host.expected.saved.off" : "host.expected.saved.on")); renderAll(); } catch (e) { fail(e); }
+          } }) : h.expected_offline ? chip("clock", T("host.expected.on"), "") : null,
           h.update_available ? chip("download", T("host.update.avail", { v: h.agent_latest }), "c-warn") : (h.agent_version ? chip("check", T("host.update.current"), "c-ok") : null),
           el("span", { class: "spacer" }),
           me.role !== "viewer" ? button(T("host.refresh"), { icon: "refresh", onclick: async () => { try { await api(`/api/hosts/${id}/refresh`, { method: "POST", body: {} }); toast(T("host.refresh.queued")); } catch (e) { fail(e); } } }) : null,

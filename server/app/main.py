@@ -359,7 +359,7 @@ async def me(request: Request):
 
 # --- хосты ---------------------------------------------------------------
 # список ПО в сводку не тянем: считаем записи на стороне SQLite
-HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,metrics,metrics_at,software_at,profile,"
+HOST_SELECT = ("SELECT id,name,os,agent_version,last_seen,posture,posture_at,metrics,metrics_at,software_at,profile,expected_offline,"
                "CASE WHEN software IS NULL THEN NULL ELSE json_array_length(software) END AS software_count FROM hosts")
 RANK = {"fail": 3, "warn": 2, "unknown": 1, "ok": 0, "info": 0, "na": 0}
 
@@ -591,6 +591,7 @@ def summarize(row, detail=False):
     out = {
         "id": row["id"], "name": row["name"], "os": row["os"], "agent_version": row["agent_version"],
         "online": online, "last_seen": row["last_seen"], "posture_at": row["posture_at"],
+        "expected_offline": bool(row["expected_offline"]),
         "status": worst, "counts": counts, "profile": profile, "index": compliance_index(checks) if posture else None,
         "exceptions": len(exc),
         "info": (posture or {}).get("info", {}),
@@ -819,6 +820,26 @@ async def host_profile_set(request: Request):
     db.x("UPDATE hosts SET profile=? WHERE id=?", (prof, hid))
     db.audit(u["name"], "profile-set", host=hid, detail=prof)
     return JSONResponse({"profile": prof})
+
+
+async def host_expected_offline_set(request: Request):
+    """Отмечает хост, который разрешено держать выключенным, не меняя фактический online."""
+    u, e = need(request, "operator")
+    if e:
+        return e
+    hid = request.path_params["id"]
+    try:
+        data = await body(request)
+    except ValueError as ex:
+        return err(str(ex))
+    value = data.get("expected_offline")
+    if type(value) is not bool:
+        return err("expected_offline: true или false")
+    if not db.q1("SELECT 1 FROM hosts WHERE id=?", (hid,)):
+        return err("хост не найден", 404)
+    db.x("UPDATE hosts SET expected_offline=? WHERE id=?", (int(value), hid))
+    db.audit(u["name"], "expected-offline-set", host=hid, detail="1" if value else "0")
+    return JSONResponse({"expected_offline": value})
 
 
 async def exception_set(request: Request):
@@ -1367,13 +1388,16 @@ def host_ips(hid):
 
 
 def export_rows(key="name"):
-    """Хосты для Lookup Tables Graylog. Колонки: key, name, os, profile, status, index, agent_version.
+    """Хосты для Lookup Tables Graylog и Atrium.
+    Колонки: key, name, os, profile, status, index, agent_version, online, expected_offline.
+    Первые семь колонок сохраняют прежние позиции для существующих справочников Graylog.
     key=name — ключ имя хоста и его короткое имя; key=ip — каждый адрес хоста и подписи адресов с карты сети."""
     rows = []
     for r in db.q(HOST_SELECT + " ORDER BY name"):
         sm = summarize(r)
         base = [r["name"], r["os"] or "", sm.get("profile") or "", sm.get("status") or "",
-                "" if sm.get("index") is None else str(sm["index"]), r["agent_version"] or ""]
+                "" if sm.get("index") is None else str(sm["index"]), r["agent_version"] or "",
+                int(sm["online"]), int(sm["expected_offline"])]
         if key == "ip":
             keys = host_ips(r["id"])
         else:
@@ -1381,7 +1405,7 @@ def export_rows(key="name"):
         rows += [[k] + base for k in keys]
     if key == "ip":
         for lb in db.q("SELECT ip,name FROM net_labels ORDER BY ip"):
-            rows.append([lb["ip"], lb["name"], "", "label", "", "", ""])
+            rows.append([lb["ip"], lb["name"], "", "label", "", "", "", "", ""])
     # ключ — один раз (без учёта регистра): адаптер Graylog «DSV File from HTTP» на повторе бросает
     # загрузку всей таблицы; первыми идут строки хостов, поэтому при совпадении остаются они
     out, seen = [], set()
@@ -1409,7 +1433,7 @@ async def export_hosts(request: Request):
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
     if request.query_params.get("header", "1") not in ("0", "no", "false"):
-        w.writerow(["key", "name", "os", "profile", "status", "index", "agent_version"])
+        w.writerow(["key", "name", "os", "profile", "status", "index", "agent_version", "online", "expected_offline"])
     for row in export_rows(key):
         w.writerow(row)
     return Response(buf.getvalue(), media_type="text/csv; charset=utf-8", headers={"Cache-Control": "no-store"})
@@ -1738,6 +1762,7 @@ app = Starlette(
         Route("/api/hosts/{id}/metrics/history", host_metric_history),
         Route("/api/hosts/{id}/history", host_history),
         Route("/api/hosts/{id}/profile", host_profile_set, methods=["POST"]),
+        Route("/api/hosts/{id}/expected-offline", host_expected_offline_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions", exception_set, methods=["POST"]),
         Route("/api/hosts/{id}/exceptions/{check}", exception_delete, methods=["DELETE"]),
         Route("/api/software/search", software_search),
